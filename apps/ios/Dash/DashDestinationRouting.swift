@@ -31,6 +31,7 @@ struct DestinationRoutedContent: View {
       case .zoneAnalytics(let id): ZoneAnalyticsView(zoneID: id)
       case .zoneWebAnalytics(let id): WebAnalyticsView(zoneID: id)
       case .zoneWAF(let id): WAFEventsView(zoneID: id)
+      case .zoneRules(let id): ZoneRulesView(zoneID: id)
       case .zoneSettings(let id): ZoneSettingsView(zoneID: id)
       case .zoneEmailRouting(let id): EmailRoutingView(zoneID: id)
       case .auditLogs: AuditLogView()

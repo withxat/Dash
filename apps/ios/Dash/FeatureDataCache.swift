@@ -70,6 +70,9 @@ enum FeatureCacheKey {
   static func zoneAnalyticsHourly(_ zoneID: String) -> String { "zoneAnalyticsHourly:\(zoneID)" }
   static func zoneRequestsHourly(_ zoneID: String) -> String { "zoneRequestsHourly:\(zoneID)" }
   static func zoneWAF(_ zoneID: String) -> String { "zoneWAF:\(zoneID)" }
+  static func zoneRuleset(zoneID: String, phase: String) -> String {
+    "zoneRuleset:\(zoneID):\(phase)"
+  }
   static func webAnalyticsSites(_ accountID: String) -> String { "rumSites:\(accountID)" }
   static func webAnalyticsMetrics(_ siteTag: String, days: Int) -> String {
     "rumMetrics:\(siteTag):\(days)"

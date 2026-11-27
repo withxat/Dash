@@ -119,6 +119,9 @@ struct ZoneDetailView: View {
     ZoneTool(
       id: .waf, title: "WAF", icon: SolarAsset.shieldCheck, route: Destination.zoneWAF),
     ZoneTool(
+      id: .rules, title: "Rules", icon: SolarAsset.listCheckMinimalistic,
+      route: Destination.zoneRules),
+    ZoneTool(
       id: .cache, title: "Cache", icon: SolarAsset.bolt, route: Destination.cache),
     ZoneTool(
       id: .settings, title: "Settings", icon: SolarAsset.settings,
@@ -1044,6 +1047,7 @@ private struct ZoneTool: Identifiable {
     case httpTraffic
     case webAnalytics
     case waf
+    case rules
     case cache
     case settings
   }

@@ -269,6 +269,9 @@ import UIKit
     parse("dash://zone/abc/waf?account=account-1")
       == .zoneWAF("abc").scoped(to: "account-1"))
   #expect(
+    parse("dash://zone/abc/rules?account=account-1")
+      == .zoneRules("abc").scoped(to: "account-1"))
+  #expect(
     parse("dash://zone/abc/unknown?account=account-1")
       == .zone("abc").scoped(to: "account-1"))  // unknown subpath falls back
   #expect(

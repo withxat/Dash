@@ -33,6 +33,8 @@ const FILL_ICONS = {
 	SolarPinListFill: 'ui/Bold/PinList',
 	SolarShieldCheckFill: 'security/Bold/ShieldCheck',
 	SolarSliderHorizontalFill: 'ui/Bold/SliderMinimalisticHorizontal',
+	/// Zone Rules — detail header.
+	SolarListCheckMinimalisticFill: 'list/Bold/ListCheckMinimalistic',
 	SolarSettingsMinimalisticFill: 'settings/Bold/SettingsMinimalistic',
 	SolarGlobalFill: 'map/Bold/Global',
 	SolarGlobusFill: 'map/Bold/Globus',

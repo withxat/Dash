@@ -79,6 +79,8 @@ enum Destination: Hashable {
   /// `zoneAnalytics`, which is what the edge saw.
   case zoneWebAnalytics(String)
   case zoneWAF(String)
+  /// Redirect rules and custom WAF rules for one zone: read, and on/off.
+  case zoneRules(String)
   case zoneSettings(String)
   /// Email Routing for one zone: routes, catch-all, and plus addressing.
   case zoneEmailRouting(String)

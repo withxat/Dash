@@ -4475,6 +4475,22 @@
         }
       }
     },
+    "Custom WAF rules" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Custom WAF rules"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "自定义 WAF 规则"
+          }
+        }
+      }
+    },
     "D1" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -4871,6 +4887,22 @@
         }
       }
     },
+    "Dynamic URL" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dynamic URL"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "动态 URL"
+          }
+        }
+      }
+    },
     "Early Hints" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -5119,6 +5151,22 @@
         }
       }
     },
+    "Execute ruleset" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Execute ruleset"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "执行规则集"
+          }
+        }
+      }
+    },
     "Expiration" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -5301,6 +5349,23 @@
         }
       }
     },
+    "Grant Single Redirect access to view redirect rules and turn them on or off." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Grant Single Redirect access to view redirect rules and turn them on or off."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "授予 Single Redirect 权限后可查看重定向规则并启用或停用。"
+          }
+        }
+      }
+    },
     "Grant SSL and Certificates access to inspect edge certificates." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -5348,6 +5413,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "授予 Workers Routes 写入权限后可编辑或删除路由。"
+          }
+        }
+      }
+    },
+    "Grant Zone WAF access to view custom rules and turn them on or off." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Grant Zone WAF access to view custom rules and turn them on or off."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "授予 Zone WAF 权限后可查看自定义规则并启用或停用。"
           }
         }
       }
@@ -5686,6 +5768,23 @@
         }
       }
     },
+    "Last updated" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Last updated"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "上次更新"
+          }
+        }
+      }
+    },
     "List tables" : {
       "localizations" : {
         "en" : {
@@ -5698,6 +5797,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "列出所有表"
+          }
+        }
+      }
+    },
+    "Log" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Log"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "记录"
           }
         }
       }
@@ -5967,6 +6082,22 @@
         }
       }
     },
+    "No custom WAF rules on this domain." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No custom WAF rules on this domain."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "此域名暂无自定义 WAF 规则。"
+          }
+        }
+      }
+    },
     "No databases yet" : {
       "localizations" : {
         "en" : {
@@ -6124,6 +6255,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "该时间窗口内没有近期安全事件。"
+          }
+        }
+      }
+    },
+    "No redirect rules on this domain." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No redirect rules on this domain."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "此域名暂无重定向规则。"
           }
         }
       }
@@ -6668,6 +6815,23 @@
         }
       }
     },
+    "Read-only — grant Single Redirect write access to turn rules on or off." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Read-only — grant Single Redirect write access to turn rules on or off."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "当前为只读权限 — 授予 Single Redirect 写入权限后可启用或停用规则。"
+          }
+        }
+      }
+    },
     "Read-only — grant Workers write access to edit secrets or Cron Triggers." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -6681,6 +6845,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "只读 — 授予 Workers 写入权限以编辑密钥或 Cron 触发器。"
+          }
+        }
+      }
+    },
+    "Read-only — grant Zone WAF write access to turn rules on or off." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Read-only — grant Zone WAF write access to turn rules on or off."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "当前为只读权限 — 授予 Zone WAF 写入权限后可启用或停用规则。"
           }
         }
       }
@@ -6713,6 +6894,38 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "近期调用"
+          }
+        }
+      }
+    },
+    "Redirect" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Redirect"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "重定向"
+          }
+        }
+      }
+    },
+    "Redirect rules" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Redirect rules"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "重定向规则"
           }
         }
       }
@@ -7070,6 +7283,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "规则 ID"
+          }
+        }
+      }
+    },
+    "Rules" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Rules"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "规则"
           }
         }
       }
@@ -7630,6 +7860,22 @@
         }
       }
     },
+    "Skip" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Skip"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "跳过"
+          }
+        }
+      }
+    },
     "smart" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -7681,6 +7927,23 @@
         }
       }
     },
+    "Status code" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Status code"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "状态码"
+          }
+        }
+      }
+    },
     "Stays in your Keychain" : {
       "localizations" : {
         "en" : {
@@ -7725,6 +7988,40 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "表"
+          }
+        }
+      }
+    },
+    "Target URL" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Target URL"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "目标 URL"
+          }
+        }
+      }
+    },
+    "Target URL expression" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Target URL expression"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "目标 URL 表达式"
           }
         }
       }
@@ -16968,6 +17265,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "你账户中未读的 Cloudflare 提醒。"
+          }
+        }
+      }
+    },
+    "Untitled rule" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Untitled rule"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "未命名规则"
           }
         }
       }

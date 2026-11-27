@@ -67,6 +67,11 @@ enum DashAuthorizationScopes {
     "workers-ci.read",
     "firewall-services.read",
     "ssl-and-certificates.read",
+    // The zone Rules screen. A phase's entry point answers to the product that
+    // owns the phase, not to one "rulesets" permission: Single Redirects to
+    // Dynamic URL Redirects, custom rules to Zone WAF (`ZoneRulesAccess`).
+    "dynamic-redirect.read",
+    "zone-waf.read",
   ]
 
   /// Scopes requested when unlocking an experimental (or otherwise locked)
@@ -111,6 +116,9 @@ enum DashAuthorizationScopes {
     "firewall-services.write",
     "workers-routes.write",
     "workers-observability.write",
+    // Turning one rule on or off (`ZoneRulesAccess`).
+    "dynamic-redirect.write",
+    "zone-waf.write",
   ]
 
   /// Legacy read-only profile retained for capability-gating tests.

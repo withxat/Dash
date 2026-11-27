@@ -249,6 +249,7 @@ extension Destination {
     case .zoneAnalytics(let id): .init(namespace: "zone-analytics", value: id)
     case .zoneWebAnalytics(let id): .init(namespace: "zone-web-analytics", value: id)
     case .zoneWAF(let id): .init(namespace: "zone-waf", value: id)
+    case .zoneRules(let id): .init(namespace: "zone-rules", value: id)
     case .zoneSettings(let id): .init(namespace: "zone-settings", value: id)
     case .zoneEmailRouting(let id): .init(namespace: "zone-email-routing", value: id)
     case .auditLogs: .init(namespace: "account", value: "audit-logs")
@@ -311,7 +312,7 @@ extension Destination {
   fileprivate var dashNavigationOwnership: DashNavigationOwnership? {
     switch self {
     case .zone(let id), .dns(let id), .cache(let id), .zoneAnalytics(let id),
-      .zoneWebAnalytics(let id), .zoneWAF(let id), .zoneSettings(let id),
+      .zoneWebAnalytics(let id), .zoneWAF(let id), .zoneRules(let id), .zoneSettings(let id),
       .zoneEmailRouting(let id):
       .zone(id)
     case .r2Bucket(let name, _), .r2BucketSettings(let name):

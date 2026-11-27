@@ -32,6 +32,7 @@ enum SolarAsset {
     static let letter = "SolarLetterFill"
     static let mailbox = "SolarMailboxFill"
     static let key = "SolarKeyFill"
+    static let listCheckMinimalistic = "SolarListCheckMinimalisticFill"
     static let lock = "SolarLockKeyholeFill"
     static let pinList = "SolarPinListFill"
     static let routing = "SolarRoutingFill"

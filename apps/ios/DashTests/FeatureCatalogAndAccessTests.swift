@@ -78,8 +78,8 @@ import UIKit
 @Test @MainActor func appModelDefaultsToFullAccountPermissions() {
   let model = AppModel(configuration: AppConfiguration(clientID: "", redirectURI: ""))
   #expect(model.selectedScopes == DashAuthorizationScopes.core)
-  #expect(DashAuthorizationScopes.initialReadOnly.count == 21)
-  #expect(DashAuthorizationScopes.core.count == 38)
+  #expect(DashAuthorizationScopes.initialReadOnly.count == 23)
+  #expect(DashAuthorizationScopes.core.count == 42)
   #expect(DashAuthorizationScopes.initialReadOnly.isStrictSubset(of: DashAuthorizationScopes.core))
   #expect(
     DashAuthorizationScopes.initialReadOnly.allSatisfy {
@@ -202,6 +202,8 @@ import UIKit
     "ssl-and-certificates.read",  // Zone Settings Edge Certificates
     "workers-routes.write",  // Worker Detail Zone Routes create/edit/delete
     "workers-observability.write",  // Worker Logs (the telemetry query accepts Write only)
+    "dynamic-redirect.read", "dynamic-redirect.write",  // Zone Rules: redirect rules
+    "zone-waf.read", "zone-waf.write",  // Zone Rules: custom WAF rules
   ]
   let readOnlyOperational = operational.filter {
     !$0.hasSuffix(".write") && !CachePurgeAccess.write.contains($0)
@@ -470,6 +472,77 @@ import UIKit
   #expect(readScopes(for: .zoneWAF("z-1")).isDisjoint(with: ZoneIPAccessRulesAccess.all))
   #expect(readScopes(for: .zoneSettings("z-1")).isDisjoint(with: ZoneSSLCertificatesAccess.read))
   #expect(writeScopes(for: .worker("api")).isDisjoint(with: WorkerRoutesAccess.write))
+}
+
+/// The Rules screen opens on the zone grant alone; each group answers to the
+/// product that owns its phase, so one missing scope locks one group.
+@Test func zoneRulesScopesAreRequestableAndGatedPerPhase() {
+  #expect(ZoneRulesAccess.read(.dynamicRedirect) == ["dynamic-redirect.read"])
+  #expect(ZoneRulesAccess.write(.dynamicRedirect) == ["dynamic-redirect.write"])
+  #expect(ZoneRulesAccess.read(.customFirewall) == ["zone-waf.read"])
+  #expect(ZoneRulesAccess.write(.customFirewall) == ["zone-waf.write"])
+  for phase in RulesetPhase.allCases {
+    let scopes = ZoneRulesAccess.all(phase)
+    #expect(scopes.isSubset(of: DashAuthorizationScopes.core))
+    #expect(scopes.isSubset(of: CloudflareScopes.requestable))
+    #expect(CloudflareScopes.invalid(in: Array(scopes)).isEmpty)
+    #expect(ZoneRulesAccess.read(phase).isSubset(of: DashAuthorizationScopes.initialReadOnly))
+    #expect(ZoneRulesAccess.write(phase).isDisjoint(with: DashAuthorizationScopes.initialReadOnly))
+    #expect(readScopes(for: .zoneRules("z-1")).isDisjoint(with: scopes))
+    #expect(writeScopes(for: .zoneRules("z-1")).isDisjoint(with: scopes))
+  }
+  #expect(readScopes(for: .zoneRules("z-1")) == ["zone.read"])
+  // The two phases share nothing: a redirect grant must not unlock WAF rules.
+  #expect(
+    ZoneRulesAccess.all(.dynamicRedirect).isDisjoint(with: ZoneRulesAccess.all(.customFirewall)))
+}
+
+@Test func zoneRulePresentationAndOutOfOrderToggleResponses() {
+  let redirect = RulesetRule(fields: [
+    "id": .string("r1"), "action": .string("redirect"), "description": .string("Maintenance"),
+    "expression": .string("true"), "enabled": .bool(false),
+    "action_parameters": .object([
+      "from_value": .object([
+        "status_code": .number(302),
+        "target_url": .object(["value": .string("https://status.example.com/")]),
+      ])
+    ]),
+  ])
+  #expect(ZoneRulePresentation.title(for: redirect) == "Maintenance")
+  #expect(ZoneRulePresentation.summary(for: redirect) == "302 → https://status.example.com/")
+  let fields = ZoneRulePresentation.detailFields(for: redirect)
+  #expect(
+    fields.map(\.label)
+      == ["Name", "Status", "Action", "Target URL", "Status code", "Expression", "Rule ID"])
+  #expect(fields.first { $0.label == "Status code" }?.value == "302")
+
+  let block = RulesetRule(fields: ["id": .string("r2"), "action": .string("block")])
+  let future = RulesetRule(fields: ["id": .string("r3"), "action": .string("serve_error")])
+  #expect(ZoneRulePresentation.summary(for: block) == ZoneRulePresentation.actionLabel("block"))
+  // An action this build has never seen is shown as sent, not guessed at.
+  #expect(ZoneRulePresentation.summary(for: future) == "serve_error")
+  #expect(
+    ZoneRulePresentation.detailFields(for: block).map(\.label).contains("Expression") == false)
+
+  // Two toggles out at once; the answer to the first lands while the second is
+  // still in flight, carrying the second rule's *old* value.
+  var state = ZoneRulesGroupState(
+    ruleset: ZoneRuleset(id: "rs", version: "1", rules: [redirect, block]), loaded: true)
+  state.replace(redirect.settingEnabled(true))
+  state.updating.insert("r1")
+  state.replace(block.settingEnabled(false))
+  state.updating.insert("r2")
+  let firstAnswer = ZoneRuleset(
+    id: "rs", version: "2", rules: [redirect.settingEnabled(true), block])
+  state.adopt(firstAnswer, for: "r1")
+  #expect(state.rules.map(\.isEnabled) == [true, false])  // r2 keeps its optimistic value
+  #expect(state.updating == ["r2"])
+  // The last answer out is the whole truth.
+  let secondAnswer = ZoneRuleset(
+    id: "rs", version: "3", rules: [redirect.settingEnabled(true), block.settingEnabled(false)])
+  state.adopt(secondAnswer, for: "r2")
+  #expect(state.ruleset == secondAnswer)
+  #expect(state.updating.isEmpty)
 }
 
 /// D1 is experimental and read-only by grant: the query screen has no

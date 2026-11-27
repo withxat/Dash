@@ -48,6 +48,7 @@ enum DashRoute: Hashable, Sendable {
   case zoneSettings(String)
   case zoneAnalytics(String)
   case zoneWAF(String)
+  case zoneRules(String)
   case zoneEmailRouting(String)
   /// A zone addressed by its domain name from a `dash.cloudflare.com` link.
   /// Dashboard URLs carry the FQDN rather than the zone tag, so `MainTabView`
@@ -160,6 +161,7 @@ enum DashRoute: Hashable, Sendable {
       case "settings": return .zoneSettings(id)
       case "analytics": return .zoneAnalytics(id)
       case "waf": return .zoneWAF(id)
+      case "rules": return .zoneRules(id)
       case "email-routing": return .zoneEmailRouting(id)
       default: return .zone(id)
       }
@@ -272,6 +274,7 @@ enum DashRoute: Hashable, Sendable {
     case .zoneSettings(let id): .zoneSettings(id)
     case .zoneAnalytics(let id): .zoneAnalytics(id)
     case .zoneWAF(let id): .zoneWAF(id)
+    case .zoneRules(let id): .zoneRules(id)
     case .zoneEmailRouting(let id): .zoneEmailRouting(id)
     case .zoneByName: nil
     case .feature(let feature): .feature(feature)

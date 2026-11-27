@@ -110,7 +110,8 @@ func featureID(for destination: Destination) -> FeatureID? {
     nil
   case .chartDetail(let detail): detail.featureID
   case .feature(let feature): feature
-  case .zone, .dns, .cache, .zoneAnalytics, .zoneWebAnalytics, .zoneWAF, .zoneSettings:
+  case .zone, .dns, .cache, .zoneAnalytics, .zoneWebAnalytics, .zoneWAF, .zoneRules,
+    .zoneSettings:
     .zones
   case .zoneEmailRouting, .emailAddresses:
     .emailRouting
@@ -175,8 +176,11 @@ func readScopes(for destination: Destination) -> Set<String> {
   // Workers Builds answers under Workers CI, on top of the feature's own read.
   case .workerBuild:
     (featureID(for: destination)?.capability.read ?? []).union(WorkerBuildsAccess.read)
-  case .feature, .zone, .worker, .workerSource, .workerConfiguration, .workerLogs, .pagesProject,
-    .pagesDeployment, .pagesDomains, .pagesConfiguration,
+  // `.zoneRules` asks for the zone alone. Its two groups answer to their own
+  // scopes (`ZoneRulesAccess`) and gate themselves, so a grant that predates
+  // them still opens the screen and a missing one locks only its own group.
+  case .feature, .zone, .zoneRules, .worker, .workerSource, .workerConfiguration, .workerLogs,
+    .pagesProject, .pagesDeployment, .pagesDomains, .pagesConfiguration,
     .r2Bucket, .r2BucketSettings, .kvNamespace, .kvKey, .d1Database, .d1Query:
     featureID(for: destination)?.capability.read ?? []
   }
@@ -207,7 +211,7 @@ func writeScopes(for destination: Destination) -> Set<String> {
   // `workers-scripts.write` neither grants it nor is needed for it.
   case .workerBuild:
     WorkerBuildsAccess.write
-  case .tunnel, .workerSource, .workerLogs, .d1Database, .d1Query:
+  case .tunnel, .workerSource, .workerLogs, .d1Database, .d1Query, .zoneRules:
     []
   case .zoneWAF:
     ["zone-settings.write"]

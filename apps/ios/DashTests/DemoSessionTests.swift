@@ -504,3 +504,52 @@ private func demoClient() -> CloudflareClient {
     try await client.getD1Database(accountID: account, databaseID: "not-a-database")
   }
 }
+
+@Test func demoZoneRulesToggleOneRuleAndKeepItsDefinition() async throws {
+  let client = demoClient()
+  let redirects = try #require(
+    try await client.getZoneEntrypointRuleset(zoneID: "zone-example", phase: .dynamicRedirect))
+  #expect(redirects.rules.map(\.name) == ["Maintenance page", "Apex to www", "Old blog paths"])
+  #expect(redirects.rules.map(\.isEnabled) == [false, true, true])
+  let maintenance = redirects.rules[0]
+
+  let updated = try await client.setZoneRulesetRuleEnabled(
+    zoneID: "zone-example", rulesetID: redirects.id, rule: maintenance, enabled: true)
+  // Only that rule moved, and it kept everything a replacement could have lost.
+  #expect(updated.rules.map(\.isEnabled) == [true, true, true])
+  #expect(updated.rules[0].expression == maintenance.expression)
+  #expect(updated.rules[0].redirectTarget?.value == "https://status.example.com/maintenance")
+  #expect(updated.rules[0].redirectStatusCode == 302)
+  #expect(updated.rules[0].name == "Maintenance page")
+  #expect(updated.rules[1] == redirects.rules[1])
+  #expect(updated.version != redirects.version)
+
+  // It reads back, in this session only.
+  let reread = try #require(
+    try await client.getZoneEntrypointRuleset(zoneID: "zone-example", phase: .dynamicRedirect))
+  #expect(reread.rules[0].isEnabled)
+  let clean = try #require(
+    try await demoClient().getZoneEntrypointRuleset(
+      zoneID: "zone-example", phase: .dynamicRedirect))
+  #expect(!clean.rules[0].isEnabled)
+
+  // The other phase is its own ruleset and did not move.
+  let custom = try #require(
+    try await client.getZoneEntrypointRuleset(zoneID: "zone-example", phase: .customFirewall))
+  #expect(custom.rules.map(\.isEnabled) == [true, true, false])
+  #expect(custom.rules[2].name == nil)
+  let off = try await client.setZoneRulesetRuleEnabled(
+    zoneID: "zone-example", rulesetID: custom.id, rule: custom.rules[1], enabled: false)
+  #expect(off.rules.map(\.isEnabled) == [true, false, false])
+  // A field Dash never models rode along.
+  #expect(off.rules[1].fields["logging"] == .object(["enabled": .bool(true)]))
+
+  // A zone with no rules answers 404, which is "none", not an error.
+  #expect(
+    try await client.getZoneEntrypointRuleset(zoneID: "zone-api", phase: .dynamicRedirect) == nil)
+  // A rule that is not in the ruleset cannot be toggled into existence.
+  await #expect(throws: CloudflareAPIError.self) {
+    try await client.setZoneRulesetRuleEnabled(
+      zoneID: "zone-example", rulesetID: custom.id, rule: maintenance, enabled: false)
+  }
+}

@@ -237,6 +237,10 @@ final class DemoSession: NSObject, URLSessionDelegate, @unchecked Sendable {
           base: base, zone: zone, tail: Array(parts.dropFirst(4)), method: method, input: input,
           query: query)
       }
+      if parts.count >= 3, parts[2] == "rulesets" {
+        return rulesets(
+          zoneID: parts[1], tail: Array(parts.dropFirst(3)), method: method, input: input)
+      }
       if parts.count >= 5, parts[2] == "firewall", parts[3] == "access_rules", parts[4] == "rules" {
         var ruleInput = input
         if method == "POST" {
@@ -968,6 +972,129 @@ final class DemoSession: NSObject, URLSessionDelegate, @unchecked Sendable {
       }
     }
     return Self.unsupported
+  }
+
+  /// Entry point rulesets for the two phases Dash shows. The single-rule PATCH
+  /// replaces the rule with the body, as Cloudflare's does — a client that
+  /// sent `enabled` alone would lose the rule's expression here too.
+  private func rulesets(
+    zoneID: String, tail: [String], method: String, input: [String: Any]
+  ) -> DemoBackend.Reply {
+    func key(_ phase: String) -> String { "rulesets:\(zoneID):\(phase)" }
+    func ruleset(_ phase: String) -> [String: Any]? {
+      if let existing = documents[key(phase)] { return existing.isEmpty ? nil : existing }
+      let seeded = Self.seedRuleset(zoneID: zoneID, phase: phase)
+      documents[key(phase)] = seeded ?? [:]
+      return seeded
+    }
+    if tail.count == 3, tail[0] == "phases", tail[2] == "entrypoint", method == "GET" {
+      guard let found = ruleset(tail[1]) else {
+        return Self.failure("could not find entrypoint ruleset in the \(tail[1]) phase")
+      }
+      return ok(found)
+    }
+    guard tail.count == 3, tail[1] == "rules", method == "PATCH" else { return Self.unsupported }
+    for phase in ["http_request_dynamic_redirect", "http_request_firewall_custom"] {
+      guard var found = ruleset(phase), found["id"] as? String == tail[0],
+        var rules = found["rules"] as? [[String: Any]],
+        let index = rules.firstIndex(where: { $0["id"] as? String == tail[2] })
+      else { continue }
+      guard input["expression"] is String, input["action"] is String else {
+        return Self.failure("A rule needs an action and an expression.", status: 400)
+      }
+      var rule = input
+      rule["id"] = tail[2]
+      rule["version"] = String((Int(rules[index]["version"] as? String ?? "1") ?? 1) + 1)
+      rule["last_updated"] = now
+      rules[index] = rule
+      found["rules"] = rules
+      found["version"] = String((Int(found["version"] as? String ?? "1") ?? 1) + 1)
+      found["last_updated"] = now
+      documents[key(phase)] = found
+      return ok(found)
+    }
+    return Self.failure("Rule not found.")
+  }
+
+  /// `example.com` carries rules in both phases; every other zone has none, so
+  /// the demo also shows the 404 a zone answers with before its first rule.
+  private static func seedRuleset(zoneID: String, phase: String) -> [String: Any]? {
+    guard zoneID == "zone-example" else { return nil }
+    let rules: [[String: Any]]
+    switch phase {
+    case "http_request_dynamic_redirect":
+      rules = [
+        [
+          "id": "demo-redirect-maintenance", "version": "2", "action": "redirect",
+          "description": "Maintenance page", "enabled": false,
+          "expression": #"(http.host eq "example.com" and not ip.src in {203.0.113.0/24})"#,
+          "last_updated": "2026-07-20T09:30:00Z",
+          "action_parameters": [
+            "from_value": [
+              "status_code": 302,
+              "target_url": ["value": "https://status.example.com/maintenance"],
+              "preserve_query_string": false,
+            ]
+          ],
+        ],
+        [
+          "id": "demo-redirect-www", "version": "1", "action": "redirect",
+          "description": "Apex to www", "enabled": true,
+          "expression": #"(http.host eq "example.com")"#,
+          "last_updated": "2026-03-02T14:05:00Z",
+          "action_parameters": [
+            "from_value": [
+              "status_code": 301,
+              "target_url": [
+                "expression": #"concat("https://www.example.com", http.request.uri.path)"#
+              ],
+              "preserve_query_string": true,
+            ]
+          ],
+        ],
+        [
+          "id": "demo-redirect-blog", "version": "4", "action": "redirect",
+          "description": "Old blog paths", "enabled": true,
+          "expression": #"(starts_with(http.request.uri.path, "/blog/2019/"))"#,
+          "last_updated": "2025-12-11T18:42:00Z",
+          "action_parameters": [
+            "from_value": [
+              "status_code": 308, "target_url": ["value": "https://example.com/archive"],
+            ]
+          ],
+        ],
+      ]
+    case "http_request_firewall_custom":
+      rules = [
+        [
+          "id": "demo-waf-login", "version": "3", "action": "managed_challenge",
+          "description": "Challenge login from outside the office", "enabled": true,
+          "expression":
+            #"(http.request.uri.path eq "/login" and not ip.src in {198.51.100.0/24})"#,
+          "last_updated": "2026-06-18T11:20:00Z",
+        ],
+        [
+          "id": "demo-waf-bots", "version": "1", "action": "block",
+          "description": "Block scrapers on the API", "enabled": true,
+          "expression":
+            #"(http.host eq "api.example.com" and cf.client.bot eq false and http.user_agent contains "python-requests")"#,
+          "last_updated": "2026-05-04T08:00:00Z",
+          "logging": ["enabled": true],
+        ],
+        [
+          "id": "demo-waf-admin", "version": "6", "action": "block", "enabled": false,
+          "expression":
+            #"(starts_with(http.request.uri.path, "/admin") and ip.src.country ne "US")"#,
+          "last_updated": "2026-01-27T22:15:00Z",
+        ],
+      ]
+    default:
+      return nil
+    }
+    return [
+      "id": "demo-ruleset-" + phase, "name": "default", "kind": "zone", "phase": phase,
+      "version": "9", "last_updated": "2026-07-20T09:30:00Z", "rules": rules,
+    ]
   }
 
   /// D1 is read-only in Dash, so the demo keeps no mutable state for it: the
