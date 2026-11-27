@@ -16,17 +16,18 @@ Resource surfaces in the catalog, plus the shell that makes them usable:
 
 | Feature | What you can do |
 | --- | --- |
-| **Domains** | Zones, DNS, cache purge and settings, domain settings, registration details and auto-renew, traffic / WAF / Web Analytics |
-| **Email Routing** | Per-domain routes, settings, destination addresses |
-| **Workers** | Scripts, deployment history and cut-over, custom domains, `workers.dev`, analytics, Workers Builds |
-| **Pages** | Projects, deployments and logs, retry/rollback, custom domains, build Live Activities |
-| **R2** | Buckets, browse/upload/preview, public URLs, Files integration, share extension and Shortcuts |
-| **KV** | Namespaces, key list, read / create·edit·delete keys |
-| **Tunnels** | Experimental; opt in under Settings → Experimental |
+| **Domains** | Zones, DNS (comments, HTTPS/SVCB, quick actions), cache purge and settings, domain settings, registration details and auto-renew, traffic / WAF (security events, IP Access Rules), Zone Rules (Redirect & Custom WAF toggles), SSL edge certificates, and Web Analytics |
+| **Email Routing** | Per-domain routes, settings, destination addresses (add, delete, resend verification) |
+| **Workers** | Scripts, deployment history and cut-over, bindings, secrets, Cron Triggers, Worker Routes, custom domains, `workers.dev`, analytics, Workers Builds, and Observability logs |
+| **Pages** | Projects, build configuration, environment variables, deployments and logs, retry/rollback/delete, custom domains, build Live Activities |
+| **R2** | Buckets, browse, multi-upload, object details and preview, search, public URLs, Files integration, share extension and Shortcuts |
+| **KV** | Namespaces (create/rename/delete), key list and search, read / create·edit·delete keys with TTL and metadata, bulk delete |
+| **Tunnels** | Experimental; opt in under Settings → Experimental (tunnels, connectors, public hostnames) |
+| **D1** | Experimental; opt in under Settings → Experimental (databases, schema tables, read-only SQL queries) |
 
-Shell around those features: Home launcher, Resources catalog, Insights charts and Cloudflare notification history, Account / Domain Metrics widgets, multi-account OAuth, an optional Face ID lock, and iPhone-only single-stack navigation. Insights only reads the notification history Cloudflare already published; Dash sends no notifications of its own.
+Shell around those features: Home launcher, Global Quick Jump cross-resource search, Resources catalog, Insights charts and Cloudflare notification history, Audit logs, Account / Domain Metrics widgets, Safari extension (`dash.cloudflare.com` handoff), multi-account OAuth, an optional Face ID lock, and iPhone-only single-stack navigation. Insights only reads the notification history Cloudflare already published; Dash sends no notifications of its own.
 
-Out of scope for now: D1, Queues, Vectorize, Secrets Store, Images, Stream, Access, and iPad / split layouts.
+Out of scope for now: Queues, Vectorize, Secrets Store, Images, Stream, Access, and iPad / split layouts.
 
 ## Repository layout
 

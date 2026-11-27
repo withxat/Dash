@@ -1,6 +1,6 @@
 # Dash for Cloudflare — Privacy Policy
 
-Effective November 25, 2026.
+Effective November 27, 2026.
 
 Dash for Cloudflare ("Dash") is an unofficial native iOS client for managing
 Cloudflare accounts. Core account API requests go directly from your device to
@@ -25,7 +25,8 @@ advertising, or tracking.
   everything else you browse or edit) normally travels directly between your
   device and `api.cloudflare.com` over HTTPS. Dash may cache resource metadata
   locally in account-scoped files so a relaunch or offline screen can show its
-  last-known data. Signing out deletes those persisted account caches.
+  last-known data. Workers request and console logs and D1 SQL query results are
+  never persisted to disk. Signing out deletes those persisted account caches.
 - **Cloudflare notifications and audit logs** are fetched directly from
   Cloudflare's API using your OAuth credential. Insights displays
   notification-history records that Cloudflare already published and keeps its
@@ -49,10 +50,12 @@ advertising, or tracking.
 - **Safari extension** is off until you turn it on in Safari's settings and
   allow it on `dash.cloudflare.com`. While on, it reads the address of a
   `dash.cloudflare.com` page as the page loads and, when that address names a
-  Pages project, a Pages deployment, or a Worker, asks Safari to open it in
-  Dash. It runs on no other website, does not read the page's content, and
-  sends nothing anywhere. It notes which links it has already offered in that
-  tab's session storage, which Safari discards with the tab.
+  Cloudflare resource Dash supports (such as a domain page, Worker, build, Pages
+  project or deployment, R2 bucket, KV namespace, D1 database, Tunnel, or Audit
+  log), asks Safari to open it in Dash. It runs on no other website, does not
+  read the page's content, and sends nothing anywhere. It notes which links it
+  has already offered in that tab's session storage, which Safari discards with
+  the tab.
 - **Preferences** are stored locally in the app's own settings storage on your
   device.
 
