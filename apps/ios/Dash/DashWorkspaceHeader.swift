@@ -26,8 +26,8 @@ struct DashRootNavigationToolbarModifier: ViewModifier {
   let watchtowerCustomization: WatchtowerChartCustomizationState?
   @Binding var editorInteractionsReady: Bool
   let onPrepareNavigation: () -> Void
-  let onProfileLongPress: () -> Void
-  let onInboxLongPress: () -> Void
+  let onProfileLongPress: @MainActor () -> Void
+  let onInboxLongPress: @MainActor () -> Void
   let onCancelEditing: () -> Void
   let onCommitEditing: () -> Void
 
@@ -124,8 +124,8 @@ extension View {
     watchtowerCustomization: WatchtowerChartCustomizationState? = nil,
     editorInteractionsReady: Binding<Bool> = .constant(false),
     onPrepareNavigation: @escaping () -> Void,
-    onProfileLongPress: @escaping () -> Void,
-    onInboxLongPress: @escaping () -> Void = {},
+    onProfileLongPress: @escaping @MainActor () -> Void,
+    onInboxLongPress: @escaping @MainActor () -> Void = {},
     onCancelEditing: @escaping () -> Void = {},
     onCommitEditing: @escaping () -> Void = {}
   ) -> some View {
