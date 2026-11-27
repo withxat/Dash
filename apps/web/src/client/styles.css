@@ -2,15 +2,18 @@
 @import '@cloudflare/kumo/styles/tailwind';
 @import 'tailwindcss';
 
+@theme {
+	--color-dash-paper: #ffffff;
+	--color-dash-gallery: #f4f2ee;
+	--color-dash-ink: #0f0f0e;
+	--color-dash-muted: #575550;
+	--color-dash-faint: #8c8982;
+	--color-dash-accent: #f38020;
+	--color-dash-accent-deep: #c45400;
+}
+
 @layer base {
 	html {
-		/* Light only, deliberately. Kumo's tokens are `light-dark()` pairs, but the
-		   switch is its own `[data-mode="dark"]` attribute, not
-		   `prefers-color-scheme`, and `:root { color-scheme: light }` from Kumo
-		   outranks anything set here in `@layer base`. Flipping it also inverts
-		   every `kumo-contrast` band from near-black to near-white, which recomposes
-		   the page rather than recoloring it. Dark mode is a real task; do not
-		   enable it by editing this one line. */
 		color-scheme: light;
 		scroll-behavior: smooth;
 	}
@@ -18,10 +21,25 @@
 	body {
 		margin: 0;
 		min-height: 100dvh;
-		background: var(--color-kumo-canvas);
+		background: var(--color-dash-paper);
+		color: var(--color-dash-ink);
+		font-family:
+			'Inter',
+			-apple-system,
+			BlinkMacSystemFont,
+			'SF Pro Text',
+			system-ui,
+			sans-serif;
+		font-feature-settings: 'cv02', 'cv03', 'cv04', 'cv11';
 		-webkit-font-smoothing: antialiased;
 		-moz-osx-font-smoothing: grayscale;
 		text-rendering: optimizeLegibility;
+	}
+
+	code,
+	pre,
+	.font-mono {
+		font-family: 'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, monospace;
 	}
 
 	a,
@@ -44,22 +62,15 @@
 	}
 }
 
+/* Tactile press cue matching DashPressButtonStyle (0.97 shrink over 150ms). */
 @utility pressable {
-	transition-property: scale;
+	transition-property: scale, background-color, color, border-color, opacity;
 	transition-duration: 150ms;
 	transition-timing-function: cubic-bezier(0.23, 1, 0.32, 1);
 
 	&:active {
-		scale: 0.96;
+		scale: 0.97;
 	}
-}
-
-/* A hairline inside a `kumo-contrast` band. `kumo-inverse` exists only as a text
-   color, so this rides currentColor and stays correct whichever way the band is
-   painted. Applied per item rather than via `divide-y` so it also works across
-   the columns of a grid. */
-@utility rule-on-contrast {
-	border-top: 1px solid color-mix(in oklch, currentColor 15%, transparent);
 }
 
 /*
@@ -68,7 +79,11 @@
   Chromium, so the square capture corners leaked through the bezel hole.
 */
 @utility app-shot-shadow {
-	filter: drop-shadow(0 2px 4px rgb(0 0 0 / 0.16)) drop-shadow(0 24px 24px rgb(0 0 0 / 0.2));
+	filter: drop-shadow(0 4px 10px rgb(15 15 14 / 0.09)) drop-shadow(0 32px 54px rgb(15 15 14 / 0.16));
+}
+
+@utility app-shot-shadow-soft {
+	filter: drop-shadow(0 2px 6px rgb(15 15 14 / 0.07)) drop-shadow(0 22px 36px rgb(15 15 14 / 0.12));
 }
 
 @utility app-shot-frame {
@@ -80,8 +95,6 @@
   Screen window geometry matches the SVG cutout (rect7 on the Wikimedia
   iPhone 16 Pro vector): x 4.118 / y 3.129 / 85.955×186.887 on a
   94.192×193.146 viewBox, with a circular corner radius of 13.340.
-  The bezel is a transparent hole, so the capture must be masked to that
-  same rounded rect — overflow alone is not enough once a filter is nearby.
 */
 @utility app-shot-screen-clip {
 	position: absolute;
@@ -90,10 +103,7 @@
 	width: 91.2552%;
 	height: 96.7596%;
 	overflow: hidden;
-	/* 13.340 / 85.955 of width, 13.340 / 186.887 of height */
 	border-radius: 15.52% / 7.14%;
-	/* Exact rounded-rect mask (same rx as the SVG cutout). Alpha mask, not
-	   luminance, so white = keep. */
 	-webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 85955 186887'%3E%3Crect width='85955' height='186887' rx='13340' ry='13340' fill='%23fff'/%3E%3C/svg%3E");
 	mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 85955 186887'%3E%3Crect width='85955' height='186887' rx='13340' ry='13340' fill='%23fff'/%3E%3C/svg%3E");
 	-webkit-mask-size: 100% 100%;
@@ -107,8 +117,6 @@
 	width: 100%;
 	height: 100%;
 	object-fit: fill;
-	/* Replaced elements sometimes ignore a parent's overflow clip; inherit the
-	   same radius so the bitmap itself is rounded. */
 	border-radius: 15.52% / 7.14%;
 }
 
@@ -120,281 +128,4 @@
 	height: 100%;
 	pointer-events: none;
 	user-select: none;
-}
-
-/*
-  Device cluster:
-  - Compact: three upright phones in a horizontal scroll track
-  - sm+: fanned composition on the umbrella stage
-  Layout classes are @utility so better-tailwindcss recognizes them in TSX.
-*/
-@utility device-cluster {
-	position: relative;
-	/* Bleed past the page gutters (px-5 / sm:px-8) so the row can scroll edge to edge */
-	width: calc(100% + 2.5rem);
-	max-width: none;
-	margin-inline: -1.25rem;
-	/* Room under the phones for the thin rail + scroll cue */
-	padding-bottom: 1.25rem;
-}
-
-/*
-  Compact default: a thin umbrella rail under the row.
-  sm+ overrides restore the large plinth behind the fan.
-*/
-@utility device-cluster-stage {
-	position: absolute;
-	z-index: 0;
-	right: 1.25rem;
-	bottom: 0.35rem;
-	left: 1.25rem;
-	height: 0.375rem;
-	overflow: hidden;
-	border-radius: 999px;
-	/* Mid lightness: readable colour without reading as ink or as a pale wash */
-	background-color: oklch(78% 0.05 280);
-	background-image:
-		conic-gradient(
-			from var(--device-stage-angle, 0deg) at 50% 35%,
-			oklch(82% 0.14 50),
-			oklch(86% 0.12 35),
-			oklch(80% 0.12 310),
-			oklch(78% 0.1 250),
-			oklch(84% 0.11 200),
-			oklch(85% 0.13 55),
-			oklch(82% 0.14 50)
-		),
-		radial-gradient(
-			ellipse 70% 55% at var(--device-stage-x1, 22%) var(--device-stage-y1, 40%),
-			oklch(90% 0.12 55 / 0.9),
-			transparent 62%
-		),
-		radial-gradient(
-			ellipse 65% 50% at var(--device-stage-x2, 78%) var(--device-stage-y2, 55%),
-			oklch(84% 0.12 300 / 0.8),
-			transparent 60%
-		),
-		radial-gradient(ellipse 90% 70% at 50% 100%, oklch(86% 0.1 45 / 0.7), transparent 55%);
-	background-blend-mode: soft-light, normal, normal, normal;
-	animation: device-stage-umbrella 12s ease-in-out infinite alternate;
-}
-
-/* Compact-only frosted track + thumb that tracks the horizontal scroll.
-   z-index stays under the phone track so the rail never covers the devices. */
-@utility device-cluster-scrollcue {
-	position: absolute;
-	z-index: 0;
-	right: 1.25rem;
-	bottom: 0.35rem;
-	left: 1.25rem;
-	height: 0.375rem;
-	pointer-events: none;
-	overflow: hidden;
-	border-radius: 999px;
-	background: rgb(255 255 255 / 0.42);
-	-webkit-backdrop-filter: blur(10px);
-	backdrop-filter: blur(10px);
-	box-shadow: inset 0 0 0 1px rgb(255 255 255 / 0.35);
-}
-
-@utility device-cluster-scrollcue-thumb {
-	height: 100%;
-	width: 36%;
-	border-radius: 999px;
-	background: rgb(255 255 255 / 0.88);
-	box-shadow: 0 0 0 1px rgb(255 255 255 / 0.5);
-	transform: translateX(0);
-	will-change: transform, width;
-}
-
-@property --device-stage-angle {
-	syntax: '<angle>';
-	inherits: false;
-	initial-value: 0deg;
-}
-
-@property --device-stage-x1 {
-	syntax: '<percentage>';
-	inherits: false;
-	initial-value: 22%;
-}
-
-@property --device-stage-y1 {
-	syntax: '<percentage>';
-	inherits: false;
-	initial-value: 40%;
-}
-
-@property --device-stage-x2 {
-	syntax: '<percentage>';
-	inherits: false;
-	initial-value: 78%;
-}
-
-@property --device-stage-y2 {
-	syntax: '<percentage>';
-	inherits: false;
-	initial-value: 55%;
-}
-
-@keyframes device-stage-umbrella {
-	0% {
-		--device-stage-angle: 0deg;
-		--device-stage-x1: 18%;
-		--device-stage-y1: 38%;
-		--device-stage-x2: 82%;
-		--device-stage-y2: 58%;
-	}
-	100% {
-		--device-stage-angle: 48deg;
-		--device-stage-x1: 32%;
-		--device-stage-y1: 52%;
-		--device-stage-x2: 68%;
-		--device-stage-y2: 42%;
-	}
-}
-
-@utility device-cluster-track {
-	position: relative;
-	z-index: 1;
-	display: flex;
-	flex-direction: row;
-	align-items: flex-end;
-	gap: 1rem;
-	overflow-x: auto;
-	overscroll-behavior-x: contain;
-	scroll-snap-type: x mandatory;
-	scroll-padding-inline: 1.25rem;
-	/* Bottom padding keeps phone bottoms clear of the thin rail + scroll cue */
-	padding: 0.5rem 1.25rem 1.1rem;
-	-webkit-overflow-scrolling: touch;
-	scrollbar-width: none;
-
-	&::-webkit-scrollbar {
-		display: none;
-	}
-}
-
-@utility device-cluster-phone {
-	position: relative;
-	flex: 0 0 auto;
-	width: min(58vw, 15.5rem);
-	scroll-snap-align: center;
-	transform: none;
-
-	/* Compact: upright row reads cleaner without per-phone drop shadows */
-	.app-shot-shadow {
-		filter: none;
-	}
-}
-
-@utility device-cluster-phone-left {
-	inset: auto;
-	bottom: auto;
-	left: auto;
-	right: auto;
-	z-index: auto;
-	width: min(58vw, 15.5rem);
-	transform: none;
-}
-
-@utility device-cluster-phone-center {
-	inset: auto;
-	bottom: auto;
-	left: auto;
-	right: auto;
-	z-index: auto;
-	width: min(58vw, 15.5rem);
-	transform: none;
-}
-
-@utility device-cluster-phone-right {
-	inset: auto;
-	bottom: auto;
-	left: auto;
-	right: auto;
-	z-index: auto;
-	width: min(58vw, 15.5rem);
-	transform: none;
-}
-
-@media (min-width: 640px) {
-	.device-cluster {
-		width: min(100%, 52rem);
-		max-width: min(100%, 52rem);
-		aspect-ratio: 1.05 / 1;
-		margin-inline: auto;
-		padding-bottom: 0;
-	}
-
-	.device-cluster-stage {
-		right: 0;
-		bottom: 0;
-		left: 0;
-		height: 56%;
-		border-radius: 2.25rem;
-	}
-
-	/* Desktop keeps the large plinth only — no scrollbar chrome */
-	.device-cluster-scrollcue {
-		display: none;
-	}
-
-	.device-cluster-track {
-		position: absolute;
-		inset: 0;
-		display: block;
-		overflow: visible;
-		padding: 0;
-		scroll-snap-type: none;
-	}
-
-	.device-cluster-phone {
-		position: absolute;
-		flex: none;
-		width: 38%;
-		scroll-snap-align: none;
-		transform-origin: 50% 100%;
-		will-change: transform;
-	}
-
-	.device-cluster-phone .app-shot-shadow {
-		filter: drop-shadow(0 2px 4px rgb(0 0 0 / 0.16)) drop-shadow(0 24px 24px rgb(0 0 0 / 0.2));
-	}
-
-	.device-cluster-phone-left {
-		bottom: 11%;
-		left: 2%;
-		z-index: 1;
-		transform: rotate(-14deg) translateY(6%);
-	}
-
-	.device-cluster-phone-center {
-		bottom: 9%;
-		left: 50%;
-		z-index: 3;
-		width: 42%;
-		transform: translateX(-50%);
-	}
-
-	.device-cluster-phone-right {
-		right: 2%;
-		bottom: 11%;
-		z-index: 2;
-		transform: rotate(14deg) translateY(6%);
-	}
-}
-
-@media (prefers-reduced-motion: reduce) {
-	.device-cluster-phone {
-		will-change: auto;
-	}
-
-	.device-cluster-stage {
-		animation: none;
-	}
-
-	.device-cluster-scrollcue-thumb {
-		will-change: auto;
-	}
 }

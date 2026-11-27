@@ -6,21 +6,32 @@
 		<link rel="apple-touch-icon" sizes="180x180" href="/dash-apple-touch-icon.png?v=1" />
 		<meta name="viewport" content="width=device-width, initial-scale=1.0" />
 		<meta name="theme-color" content="#ffffff" />
+		<meta name="robots" content="index, follow, max-image-preview:large" />
+		<meta name="author" content="Xat" />
+		<link rel="author" href="https://xat.sh" />
 		<link rel="canonical" href="https://dash.xat.sh/" />
-		<title>Dash for Cloudflare</title>
+		<link rel="preload" as="image" href="/screens/watchtower.webp?v=1" type="image/webp" />
+		<link rel="preconnect" href="https://fonts.googleapis.com" />
+		<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+		<link
+			rel="stylesheet"
+			href="https://fonts.googleapis.com/css2?family=Inter:opsz,wght@14..32,400..600&family=JetBrains+Mono:wght@400;500&display=swap"
+		/>
+		<title>Dash for Cloudflare · Native iPhone Client</title>
 		<meta
 			name="description"
-			content="Dash for Cloudflare, a native iPhone client for managing your Cloudflare account. Zones, Workers, Pages, R2, and KV."
+			content="Open-source native iPhone client for Cloudflare by Xat. Manage Zones, DNS, WAF, Workers, Logs, Pages, R2, KV, and D1 directly via OAuth 2.0 PKCE."
 		/>
 
 		<!-- Shared-link preview. Bump the version when replacing public/og.png. -->
 		<meta property="og:type" content="website" />
+		<meta property="og:locale" content="en_US" />
 		<meta property="og:site_name" content="Dash for Cloudflare" />
 		<meta property="og:url" content="https://dash.xat.sh/" />
-		<meta property="og:title" content="Dash for Cloudflare" />
+		<meta property="og:title" content="Dash for Cloudflare · Native iPhone Client" />
 		<meta
 			property="og:description"
-			content="A native iPhone client for managing your Cloudflare account. Zones, Workers, Pages, R2, and KV."
+			content="Open-source native iPhone client for Cloudflare by Xat. Manage Zones, DNS, WAF, Workers, Logs, Pages, R2, KV, and D1 directly via OAuth 2.0 PKCE."
 		/>
 		<meta property="og:image" content="https://dash.xat.sh/og.png?v=2" />
 		<meta property="og:image:type" content="image/png" />
@@ -29,16 +40,83 @@
 		<meta property="og:image:alt" content="Dash app icon with the message: Manage Cloudflare from your iPhone." />
 
 		<meta name="twitter:card" content="summary_large_image" />
-		<meta name="twitter:title" content="Dash for Cloudflare" />
+		<meta name="twitter:creator" content="@withxat" />
+		<meta name="twitter:title" content="Dash for Cloudflare · Native iPhone Client" />
 		<meta
 			name="twitter:description"
-			content="A native iPhone client for managing your Cloudflare account. Zones, Workers, Pages, R2, and KV."
+			content="Open-source native iPhone client for Cloudflare by Xat. Manage Zones, DNS, WAF, Workers, Logs, Pages, R2, KV, and D1 directly via OAuth 2.0 PKCE."
 		/>
 		<meta name="twitter:image" content="https://dash.xat.sh/og.png?v=2" />
 		<meta name="twitter:image:alt" content="Dash app icon with the message: Manage Cloudflare from your iPhone." />
+
+		<script type="application/ld+json">
+			{
+				"@context": "https://schema.org",
+				"@graph": [
+					{
+						"@type": "Person",
+						"@id": "https://xat.sh/#person",
+						"name": "Xat",
+						"jobTitle": "Design Engineer",
+						"url": "https://xat.sh",
+						"email": "mailto:i@xat.sh",
+						"sameAs": ["https://xat.sh", "https://github.com/withxat", "https://x.com/withxat", "https://t.me/withxat"]
+					},
+					{
+						"@type": "WebSite",
+						"@id": "https://dash.xat.sh/#website",
+						"name": "Dash for Cloudflare",
+						"url": "https://dash.xat.sh/",
+						"author": { "@id": "https://xat.sh/#person" }
+					},
+					{
+						"@type": "SoftwareApplication",
+						"@id": "https://dash.xat.sh/#app",
+						"name": "Dash for Cloudflare",
+						"alternateName": "Dash",
+						"applicationCategory": "DeveloperApplication",
+						"operatingSystem": "iOS 17.0+",
+						"url": "https://dash.xat.sh/",
+						"codeRepository": "https://github.com/withxat/Dash",
+						"license": "https://github.com/withxat/Dash/blob/main/LICENSE",
+						"image": "https://dash.xat.sh/og.png?v=2",
+						"screenshot": [
+							"https://dash.xat.sh/screens/watchtower.webp?v=1",
+							"https://dash.xat.sh/screens/zone.webp?v=1",
+							"https://dash.xat.sh/screens/pages.webp?v=1",
+							"https://dash.xat.sh/screens/r2.webp?v=1"
+						],
+						"description": "Open-source native SwiftUI client for managing Cloudflare accounts from iPhone, with OAuth 2.0 PKCE, direct API requests, Home Screen widgets, iOS Files R2 mount, and Live Activities.",
+						"featureList": [
+							"Zones, DNS records with comments and deferred undo deletion, WAF events, IP Access Rules, and Zone Rules toggles",
+							"Workers deployments, bindings, secrets, Cron Triggers, Worker Routes, Workers Builds, and live Observability logs",
+							"Cloudflare Pages build logs, retry and rollback, environment variables, and Lock Screen Live Activities",
+							"R2 object browser with QuickLook previews, uploads up to 100 MB, automatic iOS Files mount, and Share Extension",
+							"Workers KV namespaces and JSON key editing with TTL, plus opt-in D1 read-only SQL and Tunnels",
+							"Dithered Insights charts, Safari link handoff, Global Quick Jump, offline Demo mode, and optional Face ID lock"
+						],
+						"author": { "@id": "https://xat.sh/#person" }
+					}
+				]
+			}
+		</script>
 	</head>
 	<body>
 		<div id="root"></div>
+		<noscript>
+			<main>
+				<h1>Dash for Cloudflare — Native iPhone Client by Xat</h1>
+				<p>
+					An open-source SwiftUI client for iPhone (iOS 17+, MIT). Manage Zones, DNS, WAF, Zone Rules, Workers,
+					Observability logs, Pages, R2, KV, D1, and Tunnels directly via OAuth 2.0 PKCE.
+				</p>
+				<p>
+					<a href="https://github.com/withxat/Dash">Source on GitHub</a> · <a href="https://xat.sh">Author: Xat</a> ·
+					<a href="/privacy">Privacy Policy</a> ·
+					<a href="/terms">Terms of Use</a>
+				</p>
+			</main>
+		</noscript>
 		<script type="module" src="/src/client/main.tsx"></script>
 	</body>
 </html>

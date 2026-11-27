@@ -1,0 +1,24 @@
+# Dash for Cloudflare
+
+> An open-source native SwiftUI client for managing Cloudflare accounts from iPhone, designed and built by Xat.
+
+- Website: https://dash.xat.sh/
+- Source code (MIT): https://github.com/withxat/Dash
+- Privacy Policy: https://dash.xat.sh/privacy
+- Terms of Use: https://dash.xat.sh/terms
+- Author: Xat, Design Engineer (https://xat.sh · https://github.com/withxat · https://x.com/withxat · mailto:i@xat.sh)
+
+## Platform & Auth
+
+- Native iPhone app written in Swift 6 and SwiftUI for iOS 17+.
+- Uses Cloudflare OAuth 2.0 PKCE with tokens stored exclusively in iOS Keychain.
+- Core API requests go directly from the iPhone to `api.cloudflare.com`.
+- Stateless edge relay at `dash.xat.sh` performs only the `302` OAuth redirect to `dash://oauth/callback` and public RDAP / WHOIS domain registration lookups, with zero persistent storage and request logging disabled.
+- Built-in offline Demo mode to explore every surface without signing in.
+
+## Surfaces
+
+- **Domains & Edge Security**: DNS records (A, AAAA, CNAME, TXT, MX, SRV, CAA, HTTPS, SVCB, comments, deferred undo deletion), WAF security events, IP Access Rules, Redirect & Custom WAF rule toggles, cache purge, SSL edge certificates, Web Analytics, Email Routing, and Registrar auto-renew.
+- **Workers, Logs & Pages**: Deployment history and 100% traffic cut-over, bindings, secrets, Cron Triggers, Worker Routes, custom domains, `workers.dev`, Workers Builds, live Observability logs (15m to 24h), Pages build config and environment variables, deploy logs, retry/rollback/delete, and Lock Screen Live Activities.
+- **Storage & Experimental**: R2 object browser (uploads up to 100 MB, QuickLook previews, search, public URLs, automatic iOS Files mount), Workers KV (namespaces, key search, JSON editor with TTL and metadata, bulk delete), plus opt-in D1 (schema inspection and read-only SQL) and Tunnels (connectors and public hostnames).
+- **iOS Native Shell**: Dithered Insights charts, Cloudflare notification history, Audit logs, Home Screen widgets, Global Quick Jump search, Share Extension uploads, Shortcuts App Intents, DashSafari `dash.cloudflare.com` link handoff, and optional Face ID lock.

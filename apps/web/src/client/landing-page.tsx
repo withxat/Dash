@@ -1,19 +1,11 @@
-import { Badge } from '@cloudflare/kumo/components/badge'
-import { LinkButton } from '@cloudflare/kumo/components/button'
-import { useEffect, useRef } from 'react'
-
+import { DitheredSunriseCanvas } from './dither-canvas'
+import { useLocale } from './i18n'
 import { Stagger, StaggerItem } from './motion-primitives'
-import { SiteShell } from './site-shell'
+import { GitHubMarkIcon, SiteShell } from './site-shell'
 
-// GitHub is the only public destination that exists today. Keep the label and
-// the destination aligned, never publish a placeholder App Store URL, and use
-// this one label everywhere the page asks for the same thing.
 const PRIMARY_CTA_HREF = 'https://github.com/withxat/Dash'
-const PRIMARY_CTA_LABEL = 'Read the source on GitHub'
+const RELAY_SOURCE_HREF = 'https://github.com/withxat/Dash/tree/main/apps/web/src/worker'
 
-// Real device captures from the shipping app, stored as WebP at the native
-// iPhone 16 Pro display resolution. Bump the query version when a capture is
-// replaced.
 const SHOT_VERSION = '?v=1'
 const SHOT_WIDTH = 1206
 const SHOT_HEIGHT = 2622
@@ -24,164 +16,358 @@ interface ScreenshotSpec {
 	src: string
 }
 
-const zoneShot: ScreenshotSpec = {
-	alt: 'A zone open in Dash, with nameservers and quick actions',
-	src: `/screens/zone.webp${SHOT_VERSION}`,
-}
-
-const watchtowerShot: ScreenshotSpec = {
-	alt: 'Insights charts for web traffic, CPU time, and Worker invocations',
-	src: `/screens/watchtower.webp${SHOT_VERSION}`,
-}
-
-const pagesShot: ScreenshotSpec = {
-	alt: 'A Pages project with build outcomes and deployment history',
-	src: `/screens/pages.webp${SHOT_VERSION}`,
-}
-
-/**
- * One screen. One claim. One composition of real captures in device frames.
- * No scroll-through feature tour — the phones carry the product.
- */
 export function LandingPage() {
 	return (
 		<SiteShell mainId="main-content">
 			<main id="main-content">
-				<section
-					className="overflow-x-clip bg-kumo-base"
-					data-od-id="dash-hero"
-				>
-					<div className="
-						mx-auto flex w-full max-w-7xl flex-col px-5 pt-12
-						sm:px-8 sm:pt-16
-					"
-					>
-						<Stagger
-							className="mx-auto max-w-2xl text-center"
-							on="load"
-						>
-							<StaggerItem>
-								<Badge variant="orange">Open source. App Store release in progress.</Badge>
-							</StaggerItem>
-							<StaggerItem>
-								<h1 className="mt-6 text-[clamp(2.75rem,6.5vw,4.75rem)]/[0.92] font-semibold tracking-[-0.04em] text-balance text-kumo-strong">
-									Cloudflare, on the phone you already carry.
-								</h1>
-							</StaggerItem>
-							<StaggerItem>
-								<p className="mx-auto mt-5 max-w-md text-base/6 text-pretty text-kumo-subtle">
-									Watch traffic, roll back a deploy, browse R2.
-									Zones, Workers, Pages, and KV, native and portrait.
-								</p>
-							</StaggerItem>
-							<StaggerItem>
-								<div className="mt-8 flex justify-center">
-									<LinkButton
-										className="pressable"
-										href={PRIMARY_CTA_HREF}
-										size="lg"
-										variant="primary"
-										external
-									>
-										{PRIMARY_CTA_LABEL}
-									</LinkButton>
-								</div>
-							</StaggerItem>
-						</Stagger>
-
-						<div className="
-							mt-14 pb-16
-							sm:mt-16 sm:pb-20
-						"
-						>
-							<DeviceCluster />
-						</div>
-					</div>
-				</section>
+				<HeroSection />
+				<SurfacesSection />
+				<ArchitectureSection />
 			</main>
 		</SiteShell>
 	)
 }
 
-/**
- * Three real captures in the licensed bezel. Desktop fans them at slight
- * angles on the umbrella stage; compact widths lay them upright in a
- * horizontal scroll track with a thin gradient rail and frosted scroll cue.
- */
-function DeviceCluster() {
-	const trackRef = useRef<HTMLDivElement>(null)
-	const thumbRef = useRef<HTMLDivElement>(null)
-
-	useEffect(() => {
-		const track = trackRef.current
-		const thumb = thumbRef.current
-		if (!track || !thumb) {
-			return
-		}
-
-		const syncThumb = () => {
-			const maxScroll = track.scrollWidth - track.clientWidth
-			const trackWidth = thumb.parentElement?.clientWidth ?? 0
-			if (maxScroll <= 0 || trackWidth <= 0) {
-				thumb.style.width = '100%'
-				thumb.style.transform = 'translateX(0)'
-				return
-			}
-			// Thumb spans the visible fraction of the row; moves with scrollLeft.
-			const ratio = track.clientWidth / track.scrollWidth
-			const thumbWidth = Math.max(trackWidth * ratio, 36)
-			const travel = trackWidth - thumbWidth
-			const progress = track.scrollLeft / maxScroll
-			thumb.style.width = `${thumbWidth}px`
-			thumb.style.transform = `translateX(${travel * progress}px)`
-		}
-
-		syncThumb()
-		track.addEventListener('scroll', syncThumb, { passive: true })
-		const ro = new ResizeObserver(syncThumb)
-		ro.observe(track)
-		return () => {
-			track.removeEventListener('scroll', syncThumb)
-			ro.disconnect()
-		}
-	}, [])
+function HeroSection() {
+	const { locale, t } = useLocale()
+	const insightsShot: ScreenshotSpec = {
+		alt: t.watchtowerAlt,
+		src: `/screens/watchtower.webp${SHOT_VERSION}`,
+	}
 
 	return (
-		<div
-			aria-label="Dash on iPhone: zone, Insights, and Pages screens"
-			className="device-cluster"
-			role="img"
+		<section
+			className="
+				mx-auto max-w-[1200px] px-5 pt-6 pb-16
+				sm:px-8 sm:pt-10 sm:pb-24
+			"
+			data-od-id="dash-hero"
 		>
-			{/* Desktop: large umbrella plinth. Compact: thin gradient rail under the row. */}
-			<div aria-hidden="true" className="device-cluster-stage" />
-			{/* Compact-only frosted scrollbar cue, linked to the track's scrollLeft. */}
-			<div aria-hidden="true" className="device-cluster-scrollcue">
-				<div className="device-cluster-scrollcue-thumb" ref={thumbRef} />
+			<Stagger
+				className="
+					grid gap-8
+					lg:grid-cols-12 lg:items-end lg:gap-10
+				"
+				on="load"
+			>
+				<StaggerItem className="lg:col-span-7">
+					<h1
+						className={
+							locale === 'zh'
+								? 'text-[clamp(2.85rem,6vw,5rem)]/[1.14] font-medium tracking-tight text-dash-ink'
+								: 'text-[clamp(3rem,6.4vw,5.35rem)]/[0.96] font-medium tracking-[-0.045em] text-dash-ink'
+						}
+					>
+						{t.heroHeadingDark}
+						<br />
+						<span className="text-dash-faint">{t.heroHeadingFaint}</span>
+					</h1>
+				</StaggerItem>
+
+				<StaggerItem className="lg:col-span-5 lg:pb-1.5">
+					<p className="
+						max-w-[36ch] text-[16px]/[1.6] text-pretty text-dash-muted
+						sm:text-[17px]/[1.55]
+					"
+					>
+						{t.heroSubtitle}
+					</p>
+					<div className="mt-6 flex flex-wrap items-center gap-x-5 gap-y-3">
+						<a
+							className="
+								inline-flex h-10 pressable items-center gap-2 rounded-full bg-dash-ink px-5 text-[13px] font-medium
+								text-white transition-colors
+								hover:bg-[#272624]
+								focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-dash-accent-deep
+							"
+							href={PRIMARY_CTA_HREF}
+							rel="noopener noreferrer"
+							target="_blank"
+						>
+							<GitHubMarkIcon className="size-3.5" />
+							<span>{t.heroCta}</span>
+						</a>
+						<span className="text-[13px] text-dash-faint">
+							{t.heroMeta}
+							{' · '}
+							{t.heroBy}
+							{' '}
+							<a
+								className="
+									text-dash-ink underline decoration-black/20 underline-offset-3 transition-colors
+									hover:decoration-dash-ink
+								"
+								href="https://xat.sh"
+								rel="author me noopener noreferrer"
+								target="_blank"
+							>
+								Xat
+							</a>
+						</span>
+					</div>
+				</StaggerItem>
+			</Stagger>
+
+			<div className="
+				relative mt-10 overflow-hidden rounded-[28px] bg-dash-gallery px-6 py-12
+				sm:mt-12 sm:px-12 sm:py-14
+				lg:py-16
+			"
+			>
+				<DitheredSunriseCanvas className="pointer-events-none absolute inset-0 size-full" />
+
+				<div className="
+					relative z-10 grid items-center gap-10
+					lg:grid-cols-12 lg:gap-8
+				"
+				>
+					<div className="
+						hidden flex-col items-end text-right
+						lg:col-span-4 lg:flex lg:self-start lg:pt-24
+					"
+					>
+						<div className="flex items-center gap-4">
+							<span className="font-mono text-[10px] tracking-[0.12em] text-dash-faint uppercase">
+								{t.calloutLeftLabel}
+							</span>
+							<span aria-hidden="true" className="h-px w-12 bg-black/15" />
+						</div>
+						<p className="mt-2 max-w-[22ch] text-[13px]/[1.55] text-pretty text-dash-muted">
+							{t.calloutLeftBody}
+						</p>
+					</div>
+
+					<div className="
+						mx-auto w-[256px]
+						sm:w-[292px]
+						lg:col-span-4 lg:w-[304px]
+					"
+					>
+						<AppScreenshot screenshot={insightsShot} priority />
+					</div>
+
+					<div className="
+						hidden flex-col items-start text-left
+						lg:col-span-4 lg:flex lg:self-end lg:pb-16
+					"
+					>
+						<div className="flex items-center gap-4">
+							<span aria-hidden="true" className="h-px w-12 bg-black/15" />
+							<span className="font-mono text-[10px] tracking-[0.12em] text-dash-faint uppercase">
+								{t.calloutRightLabel}
+							</span>
+						</div>
+						<p className="mt-2 max-w-[22ch] text-[13px]/[1.55] text-pretty text-dash-muted">
+							{t.calloutRightBody}
+						</p>
+					</div>
+				</div>
 			</div>
-			<div className="device-cluster-track" ref={trackRef}>
-				<div className="device-cluster-phone device-cluster-phone-left">
-					<AppScreenshot screenshot={zoneShot} priority />
-				</div>
-				<div className="device-cluster-phone device-cluster-phone-center">
-					<AppScreenshot screenshot={watchtowerShot} priority />
-				</div>
-				<div className="device-cluster-phone device-cluster-phone-right">
-					<AppScreenshot screenshot={pagesShot} priority />
-				</div>
+		</section>
+	)
+}
+
+function SurfacesSection() {
+	const { locale, t } = useLocale()
+	return (
+		<section
+			className="
+				mx-auto max-w-[1200px] px-5 py-16
+				sm:px-8 sm:py-24
+			"
+			id="surfaces"
+		>
+			<div className="max-w-3xl">
+				<h2 className="text-[clamp(1.85rem,3.6vw,2.85rem)]/[1.14] font-medium tracking-[-0.03em] text-balance text-dash-ink">
+					{t.surfacesHeadingDark}
+					{locale === 'en' ? ' ' : ''}
+					<span className="text-dash-faint">{t.surfacesHeadingFaint}</span>
+				</h2>
 			</div>
-		</div>
+
+			<div className="
+				mt-14 grid gap-12
+				md:grid-cols-3 md:gap-8
+				lg:gap-10
+			"
+			>
+				{t.surfaces.map(surface => (
+					<article className="group flex flex-col" key={surface.index}>
+						<div className="
+							flex justify-center rounded-[24px] bg-dash-gallery px-8 py-10
+							sm:px-9 sm:py-12
+						"
+						>
+							<div className="
+								w-[220px] transition-transform duration-500 ease-[cubic-bezier(0.16,1,0.3,1)]
+								group-hover:-translate-y-1.5
+								md:w-full md:max-w-[234px]
+							"
+							>
+								<AppScreenshot
+									screenshot={{ alt: surface.alt, src: surface.src }}
+									softShadow
+								/>
+							</div>
+						</div>
+						<div className="mt-6">
+							<span className="font-mono text-[11px] text-dash-faint">
+								{surface.index}
+							</span>
+							<h3 className="mt-2 text-[17px]/[1.3] font-medium tracking-[-0.02em] text-dash-ink">
+								{surface.title}
+							</h3>
+							<p className="mt-1.5 text-[14px]/[1.6] text-pretty text-dash-muted">
+								{surface.description}
+							</p>
+						</div>
+					</article>
+				))}
+			</div>
+		</section>
+	)
+}
+
+function ArchitectureSection() {
+	const { locale, t } = useLocale()
+	return (
+		<section
+			className="
+				mx-auto max-w-[1200px] px-5 pt-8 pb-12
+				sm:px-8 sm:pt-12 sm:pb-16
+			"
+			id="architecture"
+		>
+			<div className="
+				border-t border-black/8 pt-16
+				sm:pt-24
+			"
+			>
+				<h2 className="max-w-4xl text-[clamp(1.85rem,3.6vw,2.85rem)]/[1.14] font-medium tracking-[-0.03em] text-balance text-dash-ink">
+					{t.archHeadingDark}
+					{locale === 'en' ? ' ' : ''}
+					<span className="text-dash-faint">{t.archHeadingFaint}</span>
+				</h2>
+
+				<dl className="mt-14 border-t border-black/10">
+					<div className="
+						grid gap-2 border-b border-black/10 py-6
+						md:grid-cols-12 md:gap-8
+					"
+					>
+						<dt className="
+							text-[14px] font-medium text-dash-ink
+							md:col-span-4
+						"
+						>
+							{t.archDirectLabel}
+						</dt>
+						<dd className="
+							text-[14px]/[1.7] text-pretty text-dash-muted
+							md:col-span-8
+						"
+						>
+							{t.archDirectBefore}
+							{' '}
+							<code className="font-mono text-[13px] text-dash-ink">api.cloudflare.com</code>
+							{locale === 'zh' ? '。' : '.'}
+						</dd>
+					</div>
+
+					<div className="
+						grid gap-2 border-b border-black/10 py-6
+						md:grid-cols-12 md:gap-8
+					"
+					>
+						<dt className="
+							text-[14px] font-medium text-dash-ink
+							md:col-span-4
+						"
+						>
+							{t.archRelayLabel}
+						</dt>
+						<dd className="
+							text-[14px]/[1.7] text-pretty text-dash-muted
+							md:col-span-8
+						"
+						>
+							<code className="font-mono text-[13px] text-dash-ink">dash.xat.sh</code>
+							{' '}
+							{t.archRelayAfter}
+							{' '}
+							<a
+								className="
+									inline-flex items-center gap-0.5 font-medium text-dash-ink underline decoration-black/25 underline-offset-4 transition-colors
+									hover:decoration-dash-ink
+								"
+								href={RELAY_SOURCE_HREF}
+								rel="noopener noreferrer"
+								target="_blank"
+							>
+								<span>{t.archRelaySource}</span>
+								<span aria-hidden="true" className="text-[11px]">↗</span>
+							</a>
+						</dd>
+					</div>
+
+					<div className="
+						grid gap-2 border-b border-black/10 py-6
+						md:grid-cols-12 md:gap-8
+					"
+					>
+						<dt className="
+							text-[14px] font-medium text-dash-ink
+							md:col-span-4
+						"
+						>
+							{t.archLocalLabel}
+						</dt>
+						<dd className="
+							text-[14px]/[1.7] text-pretty text-dash-muted
+							md:col-span-8
+						"
+						>
+							{t.archLocalBody}
+						</dd>
+					</div>
+
+					<div className="
+						grid gap-2 border-b border-black/10 py-6
+						md:grid-cols-12 md:gap-8
+					"
+					>
+						<dt className="
+							text-[14px] font-medium text-dash-ink
+							md:col-span-4
+						"
+						>
+							{t.archNativeLabel}
+						</dt>
+						<dd className="
+							text-[14px]/[1.7] text-pretty text-dash-muted
+							md:col-span-8
+						"
+						>
+							{t.archNativeBody}
+						</dd>
+					</div>
+				</dl>
+			</div>
+		</section>
 	)
 }
 
 function AppScreenshot({
 	priority = false,
 	screenshot,
+	softShadow = false,
 }: {
 	priority?: boolean
 	screenshot: ScreenshotSpec
+	softShadow?: boolean
 }) {
 	return (
-		<div className="app-shot-shadow">
+		<div className={softShadow ? 'app-shot-shadow-soft' : 'app-shot-shadow'}>
 			<div className="app-shot-frame">
 				<div className="app-shot-screen-clip">
 					<img
@@ -198,12 +384,8 @@ function AppScreenshot({
 					alt=""
 					aria-hidden="true"
 					className="app-shot-bezel"
-					draggable={false}
-					fetchPriority={priority ? 'high' : 'auto'}
-					height="730"
-					loading={priority ? 'eager' : 'lazy'}
+					decoding="async"
 					src={IPHONE_16_PRO_FRAME}
-					width="356"
 				/>
 			</div>
 		</div>
