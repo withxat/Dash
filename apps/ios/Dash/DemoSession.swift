@@ -298,6 +298,9 @@ final class DemoSession: NSObject, URLSessionDelegate, @unchecked Sendable {
       if tail.first == "registrar" {
         return registrar(base: base, tail: tail, method: method, input: input, query: query)
       }
+      if tail.first == "d1" {
+        return d1(tail: tail, method: method, input: input, query: query)
+      }
       if tail.prefix(3) == ["email", "routing", "addresses"] {
         let addressesPath = base + "/email/routing/addresses"
         if collections[addressesPath] == nil {
@@ -965,6 +968,33 @@ final class DemoSession: NSObject, URLSessionDelegate, @unchecked Sendable {
       }
     }
     return Self.unsupported
+  }
+
+  /// D1 is read-only in Dash, so the demo keeps no mutable state for it: the
+  /// fixtures in `DemoD1` answer every request.
+  private func d1(
+    tail: [String], method: String, input: [String: Any], query: [String: String]
+  ) -> DemoBackend.Reply {
+    guard tail.count >= 2, tail[1] == "database" else { return Self.unsupported }
+    if tail.count == 2 {
+      guard method == "GET" else { return Self.unsupported }
+      return listing(DemoD1.databases.map(\.summary), query: query, defaultSize: 100)
+    }
+    guard let database = DemoD1.database(id: tail[2]) else {
+      return Self.failure("Database not found.")
+    }
+    if tail.count == 3 {
+      return method == "GET" ? ok(database.detail) : Self.unsupported
+    }
+    guard tail.count == 4, tail[3] == "raw", method == "POST",
+      let sql = input["sql"] as? String
+    else { return Self.unsupported }
+    switch DemoD1.run(sql: sql, in: database) {
+    case .rows(let columns, let rows, let rowsRead):
+      return ok([DemoD1.rawResult(columns: columns, rows: rows, rowsRead: rowsRead)])
+    case .failure(let message):
+      return Self.failure(message, status: 400)
+    }
   }
 
   private func registrar(

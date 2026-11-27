@@ -42,14 +42,11 @@ enum FeatureCatalogFiltering {
     }
   }
 
-  static func enabledFeatures(
-    tunnelsExperimentalEnabled: Bool
-  ) -> Set<FeatureID> {
+  /// Core features plus the experimental ones switched on in Settings.
+  static func enabledFeatures(experimental: Set<FeatureID>) -> Set<FeatureID> {
     Set(
       FeatureID.allCases.filter {
-        DashExperimentalFeatures.isCatalogVisible(
-          $0,
-          tunnelsEnabled: tunnelsExperimentalEnabled)
+        DashExperimentalFeatures.isCatalogVisible($0, enabled: experimental)
       })
   }
 }
@@ -64,6 +61,7 @@ struct FeatureCatalogView: View {
   @Environment(AppModel.self) private var model
   @AppStorage(DashExperimentalFeatures.tunnelsKey) private var tunnelsExperimentalEnabled =
     false
+  @AppStorage(DashExperimentalFeatures.d1Key) private var d1ExperimentalEnabled = false
   @State private var showsQuickJump = false
 
   private var visibleFeatures: [FeatureID] {
@@ -71,7 +69,8 @@ struct FeatureCatalogView: View {
       filter: Self.defaultFilter,
       grantedScopes: model.grantedScopes,
       enabled: FeatureCatalogFiltering.enabledFeatures(
-        tunnelsExperimentalEnabled: tunnelsExperimentalEnabled))
+        experimental: DashExperimentalFeatures.enabled(
+          tunnels: tunnelsExperimentalEnabled, d1: d1ExperimentalEnabled)))
   }
 
   private var grouped: [(String, [FeatureID])] {
@@ -139,6 +138,7 @@ enum QuickJumpKind: String, CaseIterable, Hashable, Sendable {
   case pagesProject
   case r2Bucket
   case kvNamespace
+  case d1Database
   case tunnel
 
   var featureID: FeatureID {
@@ -148,6 +148,7 @@ enum QuickJumpKind: String, CaseIterable, Hashable, Sendable {
     case .pagesProject: .pages
     case .r2Bucket: .r2
     case .kvNamespace: .kv
+    case .d1Database: .d1
     case .tunnel: .tunnels
     }
   }
@@ -159,6 +160,7 @@ enum QuickJumpKind: String, CaseIterable, Hashable, Sendable {
     case .pagesProject: "Pages"
     case .r2Bucket: "R2"
     case .kvNamespace: "KV"
+    case .d1Database: "D1"
     case .tunnel: "Tunnels"
     }
   }
@@ -170,6 +172,7 @@ enum QuickJumpKind: String, CaseIterable, Hashable, Sendable {
     case .pagesProject: DashL10n.string("Pages")
     case .r2Bucket: DashL10n.string("R2 bucket")
     case .kvNamespace: DashL10n.string("KV namespace")
+    case .d1Database: DashL10n.string("D1 database")
     case .tunnel: DashL10n.string("Tunnel")
     }
   }
@@ -181,6 +184,7 @@ enum QuickJumpKind: String, CaseIterable, Hashable, Sendable {
     case .pagesProject: SolarAsset.Content.codeCircle
     case .r2Bucket: SolarAsset.Content.box
     case .kvNamespace: SolarAsset.Content.pinList
+    case .d1Database: SolarAsset.Content.database
     case .tunnel: SolarAsset.Content.routing
     }
   }
@@ -204,7 +208,7 @@ struct QuickJumpItem: Identifiable, Hashable, Sendable {
       case .pagesProject: .pagesProject
       case .r2Bucket: .r2Bucket
       case .kvNamespace: .kvNamespace
-      case .tunnel: nil
+      case .d1Database, .tunnel: nil
       }
     guard let recentKind else { return nil }
     return RecentResource(
@@ -237,13 +241,10 @@ enum QuickJumpIndex {
     cache: FeatureDataCache,
     recentsRaw: String,
     grantedScopes: Set<String>?,
-    tunnelsExperimentalEnabled: Bool
+    experimental: Set<FeatureID>
   ) -> Snapshot {
     func isAllowed(_ feature: FeatureID) -> Bool {
-      guard
-        DashExperimentalFeatures.isCatalogVisible(
-          feature,
-          tunnelsEnabled: tunnelsExperimentalEnabled)
+      guard DashExperimentalFeatures.isCatalogVisible(feature, enabled: experimental)
       else { return false }
       return feature.capability.accessLevel(grantedScopes: grantedScopes) != .locked
     }
@@ -329,6 +330,21 @@ enum QuickJumpIndex {
             subtitle: namespace.id,
             searchFields: [namespace.title, namespace.id],
             destination: .kvNamespace(namespace.id)))
+      }
+    }
+
+    if isAllowed(.d1),
+      let databases: [D1Database] = cache.get(FeatureCacheKey.d1Databases(accountID))
+    {
+      for database in databases {
+        appendUnique(
+          QuickJumpItem(
+            kind: .d1Database,
+            resourceID: database.id,
+            title: database.name,
+            subtitle: database.id,
+            searchFields: [database.name, database.id],
+            destination: .d1Database(database.id)))
       }
     }
 
@@ -435,6 +451,7 @@ struct QuickJumpTray: View {
   @Environment(\.dashTrayDismissAfter) private var dismissAfter
   @AppStorage(RecentResources.key) private var recentsRaw = ""
   @AppStorage(DashExperimentalFeatures.tunnelsKey) private var tunnelsExperimentalEnabled = false
+  @AppStorage(DashExperimentalFeatures.d1Key) private var d1ExperimentalEnabled = false
 
   @State private var query = ""
   @State private var snapshot = QuickJumpIndex.Snapshot(items: [], recents: [])
@@ -472,6 +489,9 @@ struct QuickJumpTray: View {
       refreshSnapshot()
     }
     .onChange(of: tunnelsExperimentalEnabled) { _, _ in
+      refreshSnapshot()
+    }
+    .onChange(of: d1ExperimentalEnabled) { _, _ in
       refreshSnapshot()
     }
   }
@@ -551,7 +571,8 @@ struct QuickJumpTray: View {
       cache: model.featureCache,
       recentsRaw: recentsRaw,
       grantedScopes: model.grantedScopes,
-      tunnelsExperimentalEnabled: tunnelsExperimentalEnabled)
+      experimental: DashExperimentalFeatures.enabled(
+        tunnels: tunnelsExperimentalEnabled, d1: d1ExperimentalEnabled))
   }
 
   private func select(_ item: QuickJumpItem) {

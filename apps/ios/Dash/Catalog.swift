@@ -1,7 +1,7 @@
 import Foundation
 
 enum FeatureID: String, CaseIterable, Codable, Hashable, Identifiable, Sendable {
-  case zones, emailRouting, workers, pages, r2, kv, tunnels
+  case zones, emailRouting, workers, pages, r2, kv, d1, tunnels
 
   var id: String { rawValue }
   var title: String {
@@ -18,11 +18,11 @@ enum FeatureID: String, CaseIterable, Codable, Hashable, Identifiable, Sendable 
   /// Whether `FeatureRouterContent` should hang the shared read-only banner
   /// over this feature's index. The Email Routing index is browse-only —
   /// mutations live on nested destinations that already show their own notice.
-  /// Tunnels has no write scopes at all (Dash never mutates tunnels), so a
-  /// Grant-access banner would request nothing.
+  /// Tunnels and D1 have no write scopes at all (Dash never mutates either),
+  /// so a Grant-access banner would request nothing.
   var showsCatalogReadOnlyBanner: Bool {
     switch self {
-    case .emailRouting, .tunnels: false
+    case .emailRouting, .tunnels, .d1: false
     case .zones, .workers, .pages, .r2, .kv: true
     }
   }
@@ -122,24 +122,28 @@ enum Destination: Hashable {
   case kvNamespace(String)
   /// KV key value — full-screen JSON editor (not a tray).
   case kvKey(namespaceID: String, key: String)
+  /// One D1 database, keyed on its UUID.
+  case d1Database(String)
+  /// Read-only SQL against one D1 database. A `table` opens the screen on that
+  /// table's first rows; nil opens it on an empty editor.
+  case d1Query(databaseID: String, table: String?)
 }
 
 extension DashExperimentalFeatures {
+  /// The experimental features switched on in Settings, from the views'
+  /// `@AppStorage` mirrors of the keys above. One labelled Bool per feature, so
+  /// a new experimental feature fails to build here until it names its switch.
+  static func enabled(tunnels: Bool, d1: Bool) -> Set<FeatureID> {
+    var features: Set<FeatureID> = []
+    if tunnels { features.insert(.tunnels) }
+    if d1 { features.insert(.d1) }
+    return features
+  }
+
   /// Whether a catalog feature should appear in Resources / Home shortcuts.
   /// Experimental features stay hidden until their Settings toggle is on.
-  static func isCatalogVisible(
-    _ feature: FeatureID,
-    tunnelsEnabled: Bool
-  ) -> Bool {
-    guard DashAuthorizationScopes.experimentalFeatures.contains(feature) else {
-      return true
-    }
-    return switch feature {
-    case .tunnels:
-      tunnelsEnabled
-    case .zones, .emailRouting, .workers, .pages, .r2, .kv:
-      false
-    }
+  static func isCatalogVisible(_ feature: FeatureID, enabled: Set<FeatureID>) -> Bool {
+    !DashAuthorizationScopes.experimentalFeatures.contains(feature) || enabled.contains(feature)
   }
 }
 
@@ -188,6 +192,13 @@ enum FeatureCatalog {
       .kv, "KV", "list.bullet.rectangle",
       "SolarKeyMinimalisticFill", "SolarKeyMinimalisticOutline", "Storage & Data",
       read: ["workers-kv-storage.read"], write: ["workers-kv-storage.write"]),
+    // D1 — experimental, the same opt-in as Tunnels below. `write` stays empty
+    // on purpose: Dash asks for `d1.read` alone, and that grant is what makes
+    // the query screen read-only — Cloudflare rejects a statement that would
+    // modify the database, so the guard is the server's and not a SQL parser's.
+    feature(
+      .d1, "D1", "cylinder.split.1x2", "SolarDatabaseFill", "SolarDatabaseOutline",
+      "Storage & Data", read: ["d1.read"], write: []),
     // Networks — experimental. Hidden from Resources until Settings →
     // Experimental opts it in; scopes stay out of `core` and are requested
     // when the locked row's Grant access runs. `write` stays empty on purpose:

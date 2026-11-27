@@ -290,6 +290,9 @@ import UIKit
     parse("dash://r2/my-bucket?account=account-1")
       == .r2("my-bucket").scoped(to: "account-1"))
   #expect(parse("dash://kv/ns1?account=account-1") == .kv("ns1").scoped(to: "account-1"))
+  #expect(parse("dash://d1/db-uuid?account=account-1") == .d1("db-uuid").scoped(to: "account-1"))
+  #expect(
+    parse("dash://feature/d1?account=account-1") == .feature(.d1).scoped(to: "account-1"))
   #expect(
     parse("dash://registrar/Example.COM?account=account-1")
       == .registrarDomain("example.com").scoped(to: "account-1"))
@@ -303,8 +306,8 @@ import UIKit
   // Rejections.
   #expect(parse("dash://oauth/callback?code=x") == nil)  // owned by the auth session
   #expect(parse("dash://feature/bogus") == nil)  // unknown FeatureID
-  #expect(parse("dash://feature/d1") == nil)  // retired FeatureID
-  #expect(parse("dash://d1/db-uuid") == nil)  // retired host; stale Spotlight items land here
+  #expect(parse("dash://d1/db-uuid") == nil)  // a resource link without an account
+  #expect(parse("dash://d1?account=account-1") == nil)  // missing id
   #expect(parse("dash://action/not-an-action") == nil)
   #expect(parse("dash://action/uploadR2/extra") == nil)
   #expect(parse("dash://zone") == nil)  // missing id

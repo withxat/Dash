@@ -441,3 +441,66 @@ private func demoClient() -> CloudflareClient {
   #expect(!errorLogs.isEmpty)
   #expect(errorLogs.allSatisfy { $0.isError })
 }
+
+@Test func demoD1ListsDatabasesSchemaAndAnswersReadOnlyQueries() async throws {
+  let client = demoClient()
+  let account = DemoBackend.accountID
+  let databases = try await client.listD1Databases(accountID: account)
+  #expect(databases.map(\.name) == ["app-production", "analytics-events", "app-staging"])
+  let production = try #require(databases.first)
+
+  let detail = try await client.getD1Database(accountID: account, databaseID: production.id)
+  #expect(detail.fileSize == 4_812_800)
+  #expect(detail.runningInRegion == "WNAM")
+  #expect(detail.readReplicationMode == "auto")
+
+  // The schema read Dash issues itself, WHERE and ORDER BY included.
+  let tables = try await client.listD1Tables(accountID: account, databaseID: production.id)
+  #expect(tables.map(\.name) == ["active_users", "orders", "users"])
+  #expect(tables.map(\.isView) == [true, false, false])
+  #expect(tables[2].sql?.hasPrefix("CREATE TABLE users") == true)
+  let staging = try #require(databases.last)
+  #expect(try await client.listD1Tables(accountID: account, databaseID: staging.id).isEmpty)
+
+  // The preview a table row opens: quoted identifier, LIMIT honoured.
+  let preview = try await client.queryD1Database(
+    accountID: account, databaseID: production.id,
+    sql: D1SQL.previewRows(table: "users", limit: 2))
+  #expect(preview.count == 1)
+  #expect(preview[0].columns == ["id", "email", "plan", "referred_by", "created_at"])
+  #expect(preview[0].rows.count == 2)
+  #expect(preview[0].rows[0][1] == .string("ada@example.com"))
+  #expect(preview[0].rows[0][3] == .null)
+  #expect(preview[0].meta?.rowsRead == 2)
+
+  // A projection keeps the statement's column order, not the table's.
+  let projected = try await client.queryD1Database(
+    accountID: account, databaseID: production.id, sql: "select plan, id from users;")
+  #expect(projected[0].columns == ["plan", "id"])
+  #expect(projected[0].rows.count == 5)
+  #expect(projected[0].rows[1] == [.string("free"), .number(2)])
+
+  let count = try await client.queryD1Database(
+    accountID: account, databaseID: production.id, sql: "SELECT COUNT(*) FROM orders")
+  #expect(count[0].rows == [[.number(4)]])
+
+  // Writes are refused, and so is anything the demo would have to guess at:
+  // a WHERE it ignored would return rows the statement never asked for.
+  for sql in [
+    "DELETE FROM users", "  drop table users", "UPDATE users SET plan = 'pro'",
+    "INSERT INTO users (id) VALUES (9)", "SELECT * FROM users WHERE plan = 'pro'",
+    "SELECT * FROM missing", "SELECT nope FROM users", "PRAGMA table_list",
+  ] {
+    await #expect(throws: CloudflareAPIError.self, "\(sql)") {
+      try await client.queryD1Database(accountID: account, databaseID: production.id, sql: sql)
+    }
+  }
+  // Nothing was written: the table still answers in full.
+  let after = try await client.queryD1Database(
+    accountID: account, databaseID: production.id, sql: "SELECT * FROM users")
+  #expect(after[0].rows.count == 5)
+
+  await #expect(throws: CloudflareAPIError.self) {
+    try await client.getD1Database(accountID: account, databaseID: "not-a-database")
+  }
+}

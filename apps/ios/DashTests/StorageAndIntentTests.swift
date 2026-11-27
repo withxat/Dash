@@ -202,3 +202,61 @@ import UIKit
     try JSONSerialization.jsonObject(with: session)
   }
 }
+
+@Test func d1ResultFormattingKeepsColumnOrderIntegersAndNulls() {
+  #expect(D1ResultFormatting.text(.null) == "NULL")
+  #expect(D1ResultFormatting.text(.string("")) == "")
+  #expect(D1ResultFormatting.text(.bool(true)) == "true")
+  // SQLite integers arrive as JSON numbers; a Double would print "1004.0".
+  #expect(D1ResultFormatting.text(.number(1004)) == "1004")
+  #expect(D1ResultFormatting.text(.number(-3)) == "-3")
+  #expect(D1ResultFormatting.text(.number(2.5)) == "2.5")
+  #expect(D1ResultFormatting.text(.number(1e300)) == "1e+300")
+
+  let result = D1QueryResult(
+    columns: ["zeta", "alpha", "note", "extra", "last"],
+    rows: [
+      [.number(7), .string("first"), .null, .bool(false), .string("tail")],
+      [.string(""), .string("second"), .number(1.5), .null, .null],
+    ],
+    meta: D1QueryMeta(duration: 3.44, rowsRead: 50))
+  let rows = D1ResultFormatting.rows(for: result, resultIndex: 2)
+  #expect(rows.map(\.id) == ["2-0", "2-1"])
+  #expect(D1ResultFormatting.title(for: rows[0]) == "7")
+  // An empty first value still gives the row something to tap.
+  #expect(D1ResultFormatting.title(for: rows[1]) == "—")
+  // Three columns after the first, in result order; the fifth is left to the tray.
+  #expect(D1ResultFormatting.subtitle(for: rows[0]) == "alpha: first · note: NULL · extra: false")
+  let fields = D1ResultFormatting.detailFields(for: rows[0])
+  #expect(fields.map(\.label) == ["zeta", "alpha", "note", "extra", "last"])
+  #expect(fields.map(\.value) == ["7", "first", "NULL", "false", "tail"])
+  #expect(fields.allSatisfy { $0.verbatimLabel && $0.mono })
+  // JSON keeps result order (a dictionary would sort it) and real nulls.
+  #expect(
+    D1ResultFormatting.json(for: rows[0]) == """
+      {
+        "zeta": 7,
+        "alpha": "first",
+        "note": null,
+        "extra": false,
+        "last": "tail"
+      }
+      """)
+
+  let single = D1ResultFormatting.rows(
+    for: D1QueryResult(columns: ["count(*)"], rows: [[.number(4)]]), resultIndex: 0)
+  #expect(D1ResultFormatting.subtitle(for: single[0]) == nil)
+
+  // The list is capped; the footer still counts what the statement returned.
+  let large = D1QueryResult(
+    columns: ["n"],
+    rows: (0..<(D1ResultFormatting.displayedRowLimit + 25)).map { [.number(Double($0))] })
+  #expect(D1ResultFormatting.rows(for: large, resultIndex: 0).count == 200)
+
+  // Examples: list tables first, then one preview per table, bounded.
+  let tables = (0..<30).map { D1Table(name: "t\($0)", kind: "table") }
+  let examples = D1QueryExample.examples(for: tables)
+  #expect(examples.count == 21)
+  #expect(examples[1].sql == #"SELECT * FROM "t0" LIMIT 50"#)
+  #expect(Set(examples.map(\.id)).count == examples.count)
+}

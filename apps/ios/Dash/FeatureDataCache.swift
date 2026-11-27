@@ -86,6 +86,13 @@ enum FeatureCacheKey {
     "registrarDomain:\(accountID):\(domain)"
   }
   static func tunnels(_ accountID: String) -> String { "tunnels:\(accountID)" }
+  static func d1Databases(_ accountID: String) -> String { "d1:\(accountID)" }
+  static func d1Database(accountID: String, id: String) -> String {
+    "d1Database:\(accountID):\(id)"
+  }
+  static func d1Tables(accountID: String, id: String) -> String {
+    "d1Tables:\(accountID):\(id)"
+  }
   static func tunnel(accountID: String, tunnelID: String) -> String {
     "tunnel:\(accountID):\(tunnelID)"
   }

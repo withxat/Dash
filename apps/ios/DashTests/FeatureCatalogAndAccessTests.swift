@@ -8,7 +8,7 @@ import UIKit
 
 @Test func featureCatalogContainsEveryFeatureOnce() {
   let values = FeatureCatalog.grouped.flatMap(\.1)
-  #expect(FeatureID.allCases.count == 7)
+  #expect(FeatureID.allCases.count == 8)
   #expect(values.count == FeatureID.allCases.count)
   #expect(Set(values).count == FeatureID.allCases.count)
   #expect(FeatureCatalog.descriptors.map(\.id) == FeatureCatalog.all)
@@ -118,26 +118,34 @@ import UIKit
   for feature in FeatureID.allCases {
     let access = feature.capability.accessLevel(
       grantedScopes: AppModel.demoGrantedScopes)
-    // Tunnels remains a read-only feature; every shipped editor is unlocked.
-    #expect(access == (feature == .tunnels ? .readOnly : .full))
+    // Experimental features are read-only; every shipped editor is unlocked.
+    #expect(
+      access == (DashAuthorizationScopes.experimentalFeatures.contains(feature) ? .readOnly : .full)
+    )
   }
 }
 
 @Test func experimentalFeaturesStayHiddenUntilOptedIn() {
-  #expect(
-    !DashExperimentalFeatures.isCatalogVisible(.tunnels, tunnelsEnabled: false))
-  #expect(
-    DashExperimentalFeatures.isCatalogVisible(.tunnels, tunnelsEnabled: true))
-  #expect(
-    DashExperimentalFeatures.isCatalogVisible(.zones, tunnelsEnabled: false))
+  #expect(!DashExperimentalFeatures.isCatalogVisible(.tunnels, enabled: []))
+  #expect(DashExperimentalFeatures.isCatalogVisible(.tunnels, enabled: [.tunnels]))
+  #expect(DashExperimentalFeatures.isCatalogVisible(.zones, enabled: []))
+  // Each switch opens its own feature and no other.
+  #expect(!DashExperimentalFeatures.isCatalogVisible(.d1, enabled: [.tunnels]))
+  #expect(DashExperimentalFeatures.isCatalogVisible(.d1, enabled: [.d1]))
+  #expect(DashExperimentalFeatures.enabled(tunnels: false, d1: false).isEmpty)
+  #expect(DashExperimentalFeatures.enabled(tunnels: true, d1: false) == [.tunnels])
+  #expect(DashExperimentalFeatures.enabled(tunnels: false, d1: true) == [.d1])
 
-  let coreOnly = FeatureCatalogFiltering.enabledFeatures(
-    tunnelsExperimentalEnabled: false)
+  let coreOnly = FeatureCatalogFiltering.enabledFeatures(experimental: [])
   #expect(coreOnly == DashAuthorizationScopes.coreFeatures)
   #expect(!coreOnly.contains(.tunnels))
+  #expect(!coreOnly.contains(.d1))
+
+  let tunnelsOnly = FeatureCatalogFiltering.enabledFeatures(experimental: [.tunnels])
+  #expect(tunnelsOnly == DashAuthorizationScopes.coreFeatures.union([.tunnels]))
 
   let withExperimentalFeatures = FeatureCatalogFiltering.enabledFeatures(
-    tunnelsExperimentalEnabled: true)
+    experimental: DashAuthorizationScopes.experimentalFeatures)
   #expect(withExperimentalFeatures == Set(FeatureID.allCases))
 
   let lockedCatalog = FeatureCatalogFiltering.features(
@@ -239,8 +247,7 @@ import UIKit
     filter: FeatureCatalogView.defaultFilter,
     grantedScopes: nil)
   #expect(unknown.isEmpty)
-  let coreEnabled = FeatureCatalogFiltering.enabledFeatures(
-    tunnelsExperimentalEnabled: false)
+  let coreEnabled = FeatureCatalogFiltering.enabledFeatures(experimental: [])
   let initialGrant = FeatureCatalogFiltering.features(
     filter: FeatureCatalogView.defaultFilter,
     grantedScopes: DashAuthorizationScopes.initialReadOnly,
@@ -463,6 +470,33 @@ import UIKit
   #expect(readScopes(for: .zoneWAF("z-1")).isDisjoint(with: ZoneIPAccessRulesAccess.all))
   #expect(readScopes(for: .zoneSettings("z-1")).isDisjoint(with: ZoneSSLCertificatesAccess.read))
   #expect(writeScopes(for: .worker("api")).isDisjoint(with: WorkerRoutesAccess.write))
+}
+
+/// D1 is experimental and read-only by grant: the query screen has no
+/// statement filter, so `d1.write` must never be requestable from anywhere.
+@MainActor
+@Test func d1AsksForReadAloneAndStaysOutOfSignIn() {
+  #expect(DashAuthorizationScopes.experimentalFeatures.contains(.d1))
+  #expect(!DashAuthorizationScopes.coreFeatures.contains(.d1))
+  #expect(FeatureID.d1.capability.all == ["d1.read"])
+  #expect(DashAuthorizationScopes.authorizationScopes(for: .d1) == ["d1.read"])
+  #expect(!DashAuthorizationScopes.core.contains { $0.hasPrefix("d1.") })
+  #expect(!DashAuthorizationScopes.initialReadOnly.contains { $0.hasPrefix("d1.") })
+  #expect(CloudflareScopes.requestable.contains("d1.read"))
+  #expect(CloudflareScopes.invalid(in: ["d1.read"]).isEmpty)
+  #expect(CloudflareScopes.unsupported(in: ["d1.read"]).isEmpty)
+  for destination in [
+    Destination.feature(.d1), .d1Database("db"), .d1Query(databaseID: "db", table: "users"),
+    .d1Query(databaseID: "db", table: nil),
+  ] {
+    #expect(readScopes(for: destination) == ["d1.read"])
+    #expect(writeScopes(for: destination).isEmpty)
+  }
+  // Demo opens the opted-in row without a connection wall, still read-only.
+  #expect(AppModel.demoGrantedScopes.contains("d1.read"))
+  #expect(!AppModel.demoGrantedScopes.contains("d1.write"))
+  #expect(
+    FeatureID.d1.capability.accessLevel(grantedScopes: DashAuthorizationScopes.core) == .locked)
 }
 
 @Test func workerLogsScopesStayRequestableAndNonLocking() {

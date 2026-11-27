@@ -625,6 +625,7 @@ struct SettingsView: View {
     DashChartStylePreference.defaultStyle.rawValue
   @AppStorage(DashExperimentalFeatures.tunnelsKey) private var tunnelsExperimentalEnabled =
     false
+  @AppStorage(DashExperimentalFeatures.d1Key) private var d1ExperimentalEnabled = false
   @State private var showsLanguagePicker = false
   @State private var showsWorkspaceGlowPicker = false
   @State private var showsChartStylePicker = false
@@ -782,6 +783,12 @@ struct SettingsView: View {
             isOn: $tunnelsExperimentalEnabled
           )
           .accessibilityIdentifier("settings-experimental-tunnels")
+          SettingsPlainToggleRow(
+            title: DashL10n.string("D1"),
+            icon: SolarAsset.database,
+            isOn: $d1ExperimentalEnabled
+          )
+          .accessibilityIdentifier("settings-experimental-d1")
         }
 
         // Help and About were separate sections at the foot of the page; the

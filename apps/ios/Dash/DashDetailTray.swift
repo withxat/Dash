@@ -7,6 +7,9 @@ struct DashDetailField {
   let label: String
   let value: String
   var mono = false
+  /// The label is data, not Dash's copy — a SQL column named `status` must not
+  /// come back translated.
+  var verbatimLabel = false
 }
 
 /// Tray content that lays a resource out as full, selectable label/value rows —
@@ -92,7 +95,7 @@ struct DashDetailFieldList: View {
     VStack(alignment: .leading, spacing: 4) {
       // Labels are Dash's own copy and localize here, matching DashControlSurface.
       // Values are Cloudflare's data — hostnames, sizes, ETags — and stay verbatim.
-      Text(DashL10n.ui(field.label))
+      Text(field.verbatimLabel ? field.label : DashL10n.ui(field.label))
         .dashTextStyle(.footnoteSemibold)
         .foregroundStyle(DashTheme.subtle)
       Text(field.value)

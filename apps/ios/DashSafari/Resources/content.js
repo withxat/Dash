@@ -111,6 +111,15 @@ function dashboardResource(href) {
 		return `kv/${segments[3]}`
 	}
 
+	// workers/d1[/databases/<database-id>[/...]]
+	if (segments.length >= 2 && segments[0] === 'workers' && segments[1] === 'd1') {
+		if (segments.length === 2)
+			return 'd1'
+		return segments.length >= 4 && segments[2] === 'databases' && isIdentifier(segments[3])
+			? `d1/${segments[3]}`
+			: null
+	}
+
 	// r2/default/buckets/<bucket>[/settings | /<tab>]
 	if (
 		segments.length >= 4

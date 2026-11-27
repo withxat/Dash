@@ -63,6 +63,29 @@ private func link(_ string: String) -> CloudflareDashboardLink? {
   #expect(resource("/production/builds/\(build)") == .workerBuild(worker: "api", buildID: build))
 }
 
+@Test func dashboardLinkReadsD1() {
+  let database = "13695334-5e50-478e-8b4c-b5ce4a2ff5d7"
+  // Cloudflare's own deep link to the product, as its docs write it.
+  let index = link("https://dash.cloudflare.com/?to=/:account/workers/d1")
+  #expect(index?.resource == .d1Databases)
+  #expect(index?.accountID == nil)
+  #expect(link("https://dash.cloudflare.com/\(account)/workers/d1")?.resource == .d1Databases)
+
+  #expect(
+    link("https://dash.cloudflare.com/\(account)/workers/d1/databases/\(database)")?.resource
+      == .d1Database(id: database))
+  // A tab of the database is still that database.
+  #expect(
+    link("https://dash.cloudflare.com/\(account)/workers/d1/databases/\(database)/metrics")?
+      .resource == .d1Database(id: database))
+
+  // Neither names a database, and Dash has no create screen to stand in.
+  #expect(link("https://dash.cloudflare.com/\(account)/workers/d1/databases") == nil)
+  #expect(link("https://dash.cloudflare.com/\(account)/workers/d1/create") == nil)
+  // A database id is the last thing before any tab; a tab is not an id.
+  #expect(link("https://dash.cloudflare.com/\(account)/workers/d1/\(database)") == nil)
+}
+
 @Test func dashboardLinkReadsR2KVAndAuditLogs() {
   let nsID = "0f2ac74b498b48028cb6838f7c0137e4"
   #expect(

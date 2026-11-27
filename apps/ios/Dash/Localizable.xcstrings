@@ -33,6 +33,22 @@
         }
       }
     },
+    "%@, D1 database" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@, D1 database"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@，D1 数据库"
+          }
+        }
+      }
+    },
     "%lld logs" : {
       "localizations" : {
         "en" : {
@@ -45,6 +61,38 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "%lld 条日志"
+          }
+        }
+      }
+    },
+    "%lld rows" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld rows"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld 行"
+          }
+        }
+      }
+    },
+    "%lld rows read" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld rows read"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "读取 %lld 行"
           }
         }
       }
@@ -629,6 +677,22 @@
         }
       }
     },
+    "1 row" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "1 row"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "1 行"
+          }
+        }
+      }
+    },
     "5 min" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -849,6 +913,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "账户数据"
+          }
+        }
+      }
+    },
+    "Actions, Run a query" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Actions, Run a query"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "操作，运行查询"
           }
         }
       }
@@ -4047,6 +4127,23 @@
         }
       }
     },
+    "Copy as JSON" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Copy as JSON"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "复制为 JSON"
+          }
+        }
+      }
+    },
     "Copy content" : {
       "localizations" : {
         "en" : {
@@ -4059,6 +4156,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "复制内容"
+          }
+        }
+      }
+    },
+    "Copy database ID" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Copy database ID"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "复制数据库 ID"
           }
         }
       }
@@ -4160,6 +4273,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "复制路径"
+          }
+        }
+      }
+    },
+    "Copy schema" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Copy schema"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "复制结构"
           }
         }
       }
@@ -4345,6 +4475,23 @@
         }
       }
     },
+    "D1" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "D1"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "D1"
+          }
+        }
+      }
+    },
     "D1 database" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -4375,6 +4522,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "每天（00:00 UTC）"
+          }
+        }
+      }
+    },
+    "Dash connects to D1 with read access only." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dash connects to D1 with read access only."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dash 仅以只读权限连接 D1。"
           }
         }
       }
@@ -4461,6 +4624,23 @@
         }
       }
     },
+    "Database" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Database"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "数据库"
+          }
+        }
+      }
+    },
     "Database ID" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -4474,6 +4654,38 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "数据库 ID"
+          }
+        }
+      }
+    },
+    "Database ID copied" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Database ID copied"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "数据库 ID 已复制"
+          }
+        }
+      }
+    },
+    "Database ID, %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Database ID, %@"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "数据库 ID，%@"
           }
         }
       }
@@ -4887,6 +5099,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "示例：example.com/api/*"
+          }
+        }
+      }
+    },
+    "Examples" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Examples"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "示例"
           }
         }
       }
@@ -5391,6 +5619,23 @@
         }
       }
     },
+    "Jurisdiction" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Jurisdiction"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "司法管辖区"
+          }
+        }
+      }
+    },
     "key" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -5437,6 +5682,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "最后修改"
+          }
+        }
+      }
+    },
+    "List tables" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "List tables"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "列出所有表"
           }
         }
       }
@@ -5706,6 +5967,22 @@
         }
       }
     },
+    "No databases yet" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No databases yet"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "还没有数据库"
+          }
+        }
+      }
+    },
     "No deployments match this filter." : {
       "localizations" : {
         "en" : {
@@ -5967,6 +6244,22 @@
         }
       }
     },
+    "Open D1 docs" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Open D1 docs"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "打开 D1 文档"
+          }
+        }
+      }
+    },
     "Open Domains, Workers, Pages, R2, or KV to search them here." : {
       "localizations" : {
         "en" : {
@@ -6093,6 +6386,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "常用预设"
+          }
+        }
+      }
+    },
+    "Preview rows" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Preview rows"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "预览数据"
           }
         }
       }
@@ -6258,6 +6568,22 @@
         }
       }
     },
+    "Query" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Query"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "查询"
+          }
+        }
+      }
+    },
     "Queue" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -6287,6 +6613,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "快速跳转"
+          }
+        }
+      }
+    },
+    "Read replication" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Read replication"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "读复制"
           }
         }
       }
@@ -6370,6 +6713,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "近期调用"
+          }
+        }
+      }
+    },
+    "Region" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Region"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "区域"
           }
         }
       }
@@ -6601,6 +6961,38 @@
         }
       }
     },
+    "Result %lld" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Result %lld"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "结果 %lld"
+          }
+        }
+      }
+    },
+    "Results" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Results"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "结果"
+          }
+        }
+      }
+    },
     "Route added" : {
       "localizations" : {
         "en" : {
@@ -6649,6 +7041,22 @@
         }
       }
     },
+    "Row copied" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Row copied"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已复制该行"
+          }
+        }
+      }
+    },
     "Rule ID" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -6666,6 +7074,39 @@
         }
       }
     },
+    "Run a query" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Run a query"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "运行查询"
+          }
+        }
+      }
+    },
+    "Run query" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Run query"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "运行查询"
+          }
+        }
+      }
+    },
     "Runtime" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -6679,6 +7120,39 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "运行时"
+          }
+        }
+      }
+    },
+    "Schema" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Schema"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "结构"
+          }
+        }
+      }
+    },
+    "Schema copied" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Schema copied"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已复制结构"
           }
         }
       }
@@ -6743,6 +7217,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "搜索当前账号已缓存的域名、Workers、Pages、R2、KV 和 Tunnel。"
+          }
+        }
+      }
+    },
+    "Search databases" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Search databases"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "搜索数据库"
           }
         }
       }
@@ -7057,6 +7547,22 @@
         }
       }
     },
+    "Showing the first %lld rows. %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Showing the first %lld rows. %@"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "仅显示前 %1$lld 行。%2$@"
+          }
+        }
+      }
+    },
     "Sign-in" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -7141,6 +7647,23 @@
         }
       }
     },
+    "SQL" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "SQL"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "SQL"
+          }
+        }
+      }
+    },
     "Static assets" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -7174,6 +7697,54 @@
         }
       }
     },
+    "Table" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Table"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "表"
+          }
+        }
+      }
+    },
+    "Tables" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tables"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "表"
+          }
+        }
+      }
+    },
+    "The statement returned no rows." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The statement returned no rows."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "该语句没有返回任何行。"
+          }
+        }
+      }
+    },
     "This Cron Trigger already exists." : {
       "localizations" : {
         "en" : {
@@ -7186,6 +7757,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "该 Cron 触发器已存在。"
+          }
+        }
+      }
+    },
+    "This database has no tables yet." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This database has no tables yet."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "这个数据库还没有表。"
           }
         }
       }
@@ -17074,6 +17661,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "在按钮按下、选择和确认时震动。"
+          }
+        }
+      }
+    },
+    "View" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "View"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "视图"
           }
         }
       }

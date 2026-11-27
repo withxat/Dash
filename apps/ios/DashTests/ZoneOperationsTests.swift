@@ -1201,7 +1201,7 @@ private actor ZoneSecurityLevelTestLatch {
     cache: cache,
     recentsRaw: recentsRaw,
     grantedScopes: DashAuthorizationScopes.core.union(["argotunnel.read"]),
-    tunnelsExperimentalEnabled: false)
+    experimental: [])
   #expect(withoutTunnels.items.allSatisfy { $0.kind != .tunnel })
   // Cached zone is deduplicated against its recent entry, while evicted recent worker stays searchable.
   #expect(withoutTunnels.items.filter { $0.kind == .zone && $0.resourceID == "z-1" }.count == 1)
@@ -1214,7 +1214,7 @@ private actor ZoneSecurityLevelTestLatch {
     cache: cache,
     recentsRaw: recentsRaw,
     grantedScopes: DashAuthorizationScopes.core.union(["argotunnel.read"]),
-    tunnelsExperimentalEnabled: true)
+    experimental: [.tunnels])
   let groups = QuickJumpIndex.groupedMatches(query: "northwind", in: full.items)
   #expect(
     groups.map(\.kind) == [.zone, .worker, .pagesProject, .r2Bucket, .kvNamespace, .tunnel])
@@ -1233,7 +1233,7 @@ private actor ZoneSecurityLevelTestLatch {
     cache: cache,
     recentsRaw: recentsRaw,
     grantedScopes: ["zone.read"],
-    tunnelsExperimentalEnabled: true)
+    experimental: [.tunnels])
   #expect(zonesOnly.items.map(\.kind) == [.zone])
   #expect(zonesOnly.recents.map(\.kind) == [.zone])
 }

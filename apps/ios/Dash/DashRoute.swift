@@ -22,6 +22,7 @@ enum DashRouteAccountResolution: Equatable, Sendable {
 ///   dash://pages/<name>[/domains|/deployments/<id>]?account=<account-id>
 ///   dash://r2/<name>[/settings]?account=<account-id>
 ///   dash://kv/<id>?account=<account-id>
+///   dash://d1/<database-id>?account=<account-id>
 ///   dash://audit-logs?account=<account-id>
 ///   dash://registrar/<domain>?account=<account-id>
 ///   dash://open?url=<percent-encoded dash.cloudflare.com URL>
@@ -62,6 +63,7 @@ enum DashRoute: Hashable, Sendable {
   case r2(String)
   case r2Settings(String)
   case kv(String)
+  case d1(String)
   case tunnel(String)
   case auditLogs
   /// One Cloudflare Registrar domain, keyed on the FQDN.
@@ -124,6 +126,8 @@ enum DashRoute: Hashable, Sendable {
       case .r2Bucket(let name): .r2(name)
       case .r2BucketSettings(let name): .r2Settings(name)
       case .kvNamespace(let id): .kv(id)
+      case .d1Databases: .feature(.d1)
+      case .d1Database(let id): .d1(id)
       case .tunnels: .feature(.tunnels)
       case .tunnel(let id): .tunnel(id)
       case .auditLogs: .auditLogs
@@ -186,6 +190,9 @@ enum DashRoute: Hashable, Sendable {
     case "kv":
       guard let id = segments.first else { return nil }
       return .kv(id)
+    case "d1":
+      guard let id = segments.first else { return nil }
+      return .d1(id)
     case "tunnel":
       guard let id = segments.first else { return nil }
       return .tunnel(id)
@@ -276,6 +283,7 @@ enum DashRoute: Hashable, Sendable {
     case .r2(let name): .r2Bucket(name, prefix: "")
     case .r2Settings(let name): .r2BucketSettings(name)
     case .kv(let id): .kvNamespace(id)
+    case .d1(let id): .d1Database(id)
     case .tunnel(let id): .tunnel(id)
     case .auditLogs: .auditLogs
     case .registrarDomain(let domain): .registrarDomain(domain)

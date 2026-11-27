@@ -43,6 +43,7 @@ struct FeatureRouterContent: View {
       case .r2: R2BucketsView()
       case .kv: KVNamespacesView()
       case .tunnels: TunnelsView()
+      case .d1: D1DatabasesView()
       }
     }
   }
@@ -123,6 +124,7 @@ func featureID(for destination: Destination) -> FeatureID? {
   case .pagesProject, .pagesDeployment, .pagesDomains, .pagesConfiguration: .pages
   case .r2Bucket, .r2BucketSettings: .r2
   case .kvNamespace, .kvKey: .kv
+  case .d1Database, .d1Query: .d1
   }
 }
 
@@ -175,7 +177,7 @@ func readScopes(for destination: Destination) -> Set<String> {
     (featureID(for: destination)?.capability.read ?? []).union(WorkerBuildsAccess.read)
   case .feature, .zone, .worker, .workerSource, .workerConfiguration, .workerLogs, .pagesProject,
     .pagesDeployment, .pagesDomains, .pagesConfiguration,
-    .r2Bucket, .r2BucketSettings, .kvNamespace, .kvKey:
+    .r2Bucket, .r2BucketSettings, .kvNamespace, .kvKey, .d1Database, .d1Query:
     featureID(for: destination)?.capability.read ?? []
   }
 }
@@ -205,7 +207,7 @@ func writeScopes(for destination: Destination) -> Set<String> {
   // `workers-scripts.write` neither grants it nor is needed for it.
   case .workerBuild:
     WorkerBuildsAccess.write
-  case .tunnel, .workerSource, .workerLogs:
+  case .tunnel, .workerSource, .workerLogs, .d1Database, .d1Query:
     []
   case .zoneWAF:
     ["zone-settings.write"]

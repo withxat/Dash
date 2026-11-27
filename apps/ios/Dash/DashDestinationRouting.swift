@@ -56,6 +56,9 @@ struct DestinationRoutedContent: View {
       case .kvNamespace(let id): KVNamespaceView(namespaceID: id)
       case .kvKey(let namespaceID, let key):
         KVKeyDetailView(namespaceID: namespaceID, key: key)
+      case .d1Database(let id): D1DatabaseView(databaseID: id)
+      case .d1Query(let databaseID, let table):
+        D1QueryView(databaseID: databaseID, table: table)
       }
     }
     .environment(\.featureAllowsWrites, allowsWrites)

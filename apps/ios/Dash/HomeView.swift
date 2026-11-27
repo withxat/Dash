@@ -17,6 +17,7 @@ struct HomeView: View {
   @AppStorage(HomeEducation.dismissalsKey) private var educationDismissalsRaw = ""
   @AppStorage(DashExperimentalFeatures.tunnelsKey) private var tunnelsExperimentalEnabled =
     false
+  @AppStorage(DashExperimentalFeatures.d1Key) private var d1ExperimentalEnabled = false
   @AppStorage(PinnedZones.key) private var pinnedZoneData = ""
   @AppStorage(PinnedZones.initializedAccountsKey) private var pinnedZonesInitialized = ""
   @State private var zones: [CloudflareZone] = []
@@ -61,7 +62,8 @@ struct HomeView: View {
     HomeShortcuts.decode(shortcutsRaw).filter {
       DashExperimentalFeatures.isCatalogVisible(
         $0,
-        tunnelsEnabled: tunnelsExperimentalEnabled)
+        enabled: DashExperimentalFeatures.enabled(
+          tunnels: tunnelsExperimentalEnabled, d1: d1ExperimentalEnabled))
     }
   }
 
@@ -1035,6 +1037,7 @@ private struct EditShortcutsView: View {
   @Binding var selectionRaw: String
   @AppStorage(DashExperimentalFeatures.tunnelsKey) private var tunnelsExperimentalEnabled =
     false
+  @AppStorage(DashExperimentalFeatures.d1Key) private var d1ExperimentalEnabled = false
   /// Draft until Done — ✕ / drag / scrim discard without writing AppStorage.
   @State private var draftRaw: String?
   @State private var didSeedDraft = false
@@ -1053,7 +1056,8 @@ private struct EditShortcutsView: View {
     FeatureCatalog.all.filter {
       DashExperimentalFeatures.isCatalogVisible(
         $0,
-        tunnelsEnabled: tunnelsExperimentalEnabled)
+        enabled: DashExperimentalFeatures.enabled(
+          tunnels: tunnelsExperimentalEnabled, d1: d1ExperimentalEnabled))
     }
   }
 

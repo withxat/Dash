@@ -275,6 +275,9 @@ extension Destination {
     case .kvNamespace(let id): .init(namespace: "kv-namespace", value: id)
     case .kvKey(let namespaceID, let key):
       .init(namespace: "kv-key", value: "\(namespaceID)/\(key)")
+    case .d1Database(let id): .init(namespace: "d1-database", value: id)
+    case .d1Query(let databaseID, let table):
+      .init(namespace: "d1-query", value: "\(databaseID)/\(table ?? "")")
     }
   }
 

@@ -21,7 +21,8 @@ enum DashAuthorizationScopes {
   /// `core` / sign-in; enabling one only reveals the Resources row (usually
   /// locked) until the user authorizes it.
   static let experimentalFeatures: Set<FeatureID> = [
-    .tunnels
+    .tunnels,
+    .d1,
   ]
 
   /// Read scopes used by nested screens that are not represented by a

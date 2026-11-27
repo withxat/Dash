@@ -246,5 +246,25 @@
 	{
 		"url": "https://dash.cloudflare.com/?to=/:account/pages/view/a&to=/:account/pages/view/b",
 		"opens": false
+	},
+	{
+		"url": "https://dash.cloudflare.com/?to=/:account/workers/d1",
+		"opens": true
+	},
+	{
+		"url": "https://dash.cloudflare.com/0123456789abcdef0123456789abcdef/workers/d1/databases/13695334-5e50-478e-8b4c-b5ce4a2ff5d7",
+		"opens": true
+	},
+	{
+		"url": "https://dash.cloudflare.com/0123456789abcdef0123456789abcdef/workers/d1/databases/13695334-5e50-478e-8b4c-b5ce4a2ff5d7/metrics",
+		"opens": true
+	},
+	{
+		"url": "https://dash.cloudflare.com/0123456789abcdef0123456789abcdef/workers/d1/databases",
+		"opens": false
+	},
+	{
+		"url": "https://dash.cloudflare.com/0123456789abcdef0123456789abcdef/workers/d1/create",
+		"opens": false
 	}
 ]

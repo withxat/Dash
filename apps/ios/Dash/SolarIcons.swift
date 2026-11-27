@@ -21,6 +21,7 @@ enum SolarAsset {
     static let code = "SolarCodeSquareFill"
     static let codeCircle = "SolarCodeCircleFill"
     static let danger = "SolarDangerTriangleFill"
+    static let database = "SolarDatabaseFill"
     static let file = "SolarFileFill"
     static let folder = "SolarFolderFill"
     static let globe = "SolarGlobalFill"
@@ -43,7 +44,7 @@ enum SolarAsset {
 
     static let all: Set<String> = [
       addCircle, bolt, box, boxMinimalistic, chart, chartSquare, checkCircle,
-      clock, cloud, code, codeCircle, danger, file, folder, globe, globus,
+      clock, cloud, code, codeCircle, danger, database, file, folder, globe, globus,
       graph, inbox, infoCircle, key, letter, lock, mailbox, pinList, routing, search, settings,
       shieldCheck, slider, upload, user,
     ]

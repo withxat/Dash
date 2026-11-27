@@ -128,6 +128,7 @@ enum DashInteractionPreferences {
 /// with the rest of the feature registry.
 enum DashExperimentalFeatures {
   static let tunnelsKey = "dash.experimental.tunnels_enabled"
+  static let d1Key = "dash.experimental.d1_enabled"
 
   static var tunnelsEnabled: Bool {
     UserDefaults.standard.bool(forKey: tunnelsKey)

@@ -45,6 +45,8 @@ public struct CloudflareDashboardLink: Hashable, Sendable {
     case r2Bucket(name: String)
     case r2BucketSettings(name: String)
     case kvNamespace(id: String)
+    case d1Databases
+    case d1Database(id: String)
     case tunnels
     case tunnel(id: String)
     case auditLogs
@@ -124,6 +126,14 @@ public struct CloudflareDashboardLink: Hashable, Sendable {
       segments[2] == "namespaces", isIdentifier(segments[3])
     {
       return .kvNamespace(id: segments[3])
+    }
+
+    // workers/d1[/databases/<database-id>[/...]]
+    if segments.count >= 2, segments[0] == "workers", segments[1] == "d1" {
+      if segments.count == 2 { return .d1Databases }
+      guard segments.count >= 4, segments[2] == "databases", isIdentifier(segments[3])
+      else { return nil }
+      return .d1Database(id: segments[3])
     }
 
     // r2/default/buckets/<bucket>[/settings | /<tab>]

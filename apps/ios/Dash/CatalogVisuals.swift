@@ -315,6 +315,7 @@ enum FeatureVisualIdentity {
     case .r2: .accent
     case .kv: .warning
     case .tunnels: .violet
+    case .d1: .teal
     }
   }
 

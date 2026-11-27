@@ -109,6 +109,8 @@
 		B00000000000000000000317 /* WorkerBuildDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000317 /* WorkerBuildDetailView.swift */; };
 		B00000000000000000000318 /* WorkerConfigurationView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000318 /* WorkerConfigurationView.swift */; };
 		B00000000000000000000320 /* WorkerLogsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000320 /* WorkerLogsView.swift */; };
+		B00000000000000000000322 /* DemoD1.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000322 /* DemoD1.swift */; };
+		B00000000000000000000321 /* D1Views.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000321 /* D1Views.swift */; };
 		B00000000000000000000319 /* PagesConfigurationView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000319 /* PagesConfigurationView.swift */; };
 		B000000000000000000001B2 /* WorkerBuildActivity.swift in Sources */ = {isa = PBXBuildFile; fileRef = F000000000000000000001B2 /* WorkerBuildActivity.swift */; };
 		B000000000000000000001B3 /* WorkerBuildActivity.swift in Sources */ = {isa = PBXBuildFile; fileRef = F000000000000000000001B2 /* WorkerBuildActivity.swift */; };
@@ -374,6 +376,8 @@
 		F00000000000000000000317 /* WorkerBuildDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkerBuildDetailView.swift; sourceTree = "<group>"; };
 		F00000000000000000000318 /* WorkerConfigurationView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkerConfigurationView.swift; sourceTree = "<group>"; };
 		F00000000000000000000320 /* WorkerLogsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkerLogsView.swift; sourceTree = "<group>"; };
+		F00000000000000000000322 /* DemoD1.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DemoD1.swift; sourceTree = "<group>"; };
+		F00000000000000000000321 /* D1Views.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = D1Views.swift; sourceTree = "<group>"; };
 		F00000000000000000000319 /* PagesConfigurationView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PagesConfigurationView.swift; sourceTree = "<group>"; };
 		F000000000000000000001B2 /* WorkerBuildActivity.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkerBuildActivity.swift; sourceTree = "<group>"; };
 		F000000000000000000001B4 /* WorkerBuildActivityTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkerBuildActivityTests.swift; sourceTree = "<group>"; };
@@ -613,6 +617,8 @@
 				F00000000000000000000317 /* WorkerBuildDetailView.swift */,
 				F00000000000000000000318 /* WorkerConfigurationView.swift */,
 				F00000000000000000000320 /* WorkerLogsView.swift */,
+				F00000000000000000000322 /* DemoD1.swift */,
+				F00000000000000000000321 /* D1Views.swift */,
 				F00000000000000000000319 /* PagesConfigurationView.swift */,
 				F000000000000000000001B0 /* WorkerBuildActivityController.swift */,
 				F00000000000000000000175 /* DashDateFormatting.swift */,
@@ -1186,6 +1192,8 @@
 				B00000000000000000000317 /* WorkerBuildDetailView.swift in Sources */,
 				B00000000000000000000318 /* WorkerConfigurationView.swift in Sources */,
 				B00000000000000000000320 /* WorkerLogsView.swift in Sources */,
+				B00000000000000000000322 /* DemoD1.swift in Sources */,
+				B00000000000000000000321 /* D1Views.swift in Sources */,
 				B00000000000000000000319 /* PagesConfigurationView.swift in Sources */,
 				B000000000000000000001B0 /* WorkerBuildActivityController.swift in Sources */,
 				B00000000000000000000175 /* DashDateFormatting.swift in Sources */,
