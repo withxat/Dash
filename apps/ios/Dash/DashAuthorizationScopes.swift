@@ -96,6 +96,10 @@ enum DashAuthorizationScopes {
   /// (`CachePurgeAccess`) rather than through the Cache screen's settings scope.
   /// `workers-ci.write` is Cancel build, on the Worker screen's in-progress
   /// card and on the build screen (`WorkerBuildsAccess`).
+  /// `workers-observability.write` is the Worker Logs screen, and it is a
+  /// *read*: Cloudflare's telemetry query is a POST that accepts Workers
+  /// Observability Write and nothing else, so `workers-observability.read`
+  /// would be a scope with no endpoint behind it (`WorkerLogsAccess`).
   private static let coreWriteOperations: Set<String> = [
     "account-settings.write",
     "zone-settings.write",
@@ -105,6 +109,7 @@ enum DashAuthorizationScopes {
     "workers-ci.write",
     "firewall-services.write",
     "workers-routes.write",
+    "workers-observability.write",
   ]
 
   /// Legacy read-only profile retained for capability-gating tests.

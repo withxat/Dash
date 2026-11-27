@@ -429,4 +429,15 @@ private func demoClient() -> CloudflareClient {
     try await client.listWorkerRoutes(zoneID: "zone-example").allSatisfy {
       $0.id != createdRoute.id
     })
+
+  // Workers Observability logs query supports All and Errors filters.
+  let allLogs = try await client.queryWorkerObservabilityLogs(
+    accountID: "demo-account", scriptName: "api-worker", windowMinutes: 60, errorsOnly: false)
+  #expect(allLogs.count >= 3)
+  #expect(allLogs.contains { $0.isError })
+  #expect(allLogs.contains { !$0.isError })
+  let errorLogs = try await client.queryWorkerObservabilityLogs(
+    accountID: "demo-account", scriptName: "api-worker", windowMinutes: 60, errorsOnly: true)
+  #expect(!errorLogs.isEmpty)
+  #expect(errorLogs.allSatisfy { $0.isError })
 }

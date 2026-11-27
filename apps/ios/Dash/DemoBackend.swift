@@ -566,6 +566,134 @@ final class DemoBackend: URLProtocol {
     }
   }
 
+  static func workerObservabilityLogsReply(input: [String: Any]) -> Reply {
+    let parameters = input["parameters"] as? [String: Any]
+    let filters = parameters?["filters"] as? [[String: Any]] ?? []
+    let scriptName =
+      filters.first(where: { ($0["key"] as? String) == "$metadata.service" })?["value"] as? String
+      ?? "api-worker"
+    let errorsOnly = filters.contains { ($0["kind"] as? String) == "group" }
+    let nowMs = Int64((Date().timeIntervalSince1970 * 1000).rounded())
+
+    let errorEntry = #"""
+      "demo-req-500": [
+        {
+          "$metadata": {
+            "id": "demo-ev-500-root",
+            "requestId": "demo-req-500",
+            "type": "cf-worker-event",
+            "trigger": "POST /v1/checkout",
+            "url": "https://api.example.com/v1/checkout",
+            "statusCode": 500,
+            "duration": 24.6,
+            "rayId": "9c4a12e8f012-SJC"
+          },
+          "timestamp": \#(nowMs - 180_000),
+          "$workers": {
+            "eventType": "fetch",
+            "scriptName": "\#(scriptName)",
+            "outcome": "exception",
+            "cpuTimeMs": 5.3,
+            "wallTimeMs": 24.6,
+            "event": {
+              "request": { "method": "POST", "url": "https://api.example.com/v1/checkout" },
+              "response": { "status": 500 }
+            }
+          }
+        },
+        {
+          "$metadata": {
+            "id": "demo-ev-500-warn",
+            "requestId": "demo-req-500",
+            "level": "warn",
+            "message": "Upstream payment gateway timeout after 20ms, retrying once"
+          },
+          "timestamp": \#(nowMs - 179_980)
+        },
+        {
+          "$metadata": {
+            "id": "demo-ev-500-err",
+            "requestId": "demo-req-500",
+            "level": "error",
+            "message": "TypeError: Cannot read properties of undefined (reading 'chargeId')",
+            "error": "TypeError: Cannot read properties of undefined (reading 'chargeId')"
+          },
+          "timestamp": \#(nowMs - 179_975)
+        }
+      ]
+      """#
+
+    let okEntry1 = #"""
+      "demo-req-200-a": [
+        {
+          "$metadata": {
+            "id": "demo-ev-200-a-root",
+            "requestId": "demo-req-200-a",
+            "type": "cf-worker-event",
+            "trigger": "GET /v1/items?limit=20",
+            "url": "https://api.example.com/v1/items?limit=20",
+            "statusCode": 200,
+            "duration": 6.4,
+            "rayId": "9c4a12e8e801-SJC"
+          },
+          "timestamp": \#(nowMs - 45_000),
+          "$workers": {
+            "eventType": "fetch",
+            "scriptName": "\#(scriptName)",
+            "outcome": "ok",
+            "cpuTimeMs": 1.2,
+            "wallTimeMs": 6.4,
+            "event": {
+              "request": { "method": "GET", "url": "https://api.example.com/v1/items?limit=20" },
+              "response": { "status": 200 }
+            }
+          }
+        },
+        {
+          "$metadata": {
+            "id": "demo-ev-200-a-log",
+            "requestId": "demo-req-200-a",
+            "level": "info",
+            "message": "Cache hit for items:page:1 (20 rows)"
+          },
+          "timestamp": \#(nowMs - 44_996)
+        }
+      ]
+      """#
+
+    let okEntry2 = #"""
+      "demo-req-200-b": [
+        {
+          "$metadata": {
+            "id": "demo-ev-200-b-root",
+            "requestId": "demo-req-200-b",
+            "type": "cf-worker-event",
+            "trigger": "GET /health",
+            "url": "https://api.example.com/health",
+            "statusCode": 200,
+            "duration": 1.4,
+            "rayId": "9c4a12e8d112-LAX"
+          },
+          "timestamp": \#(nowMs - 420_000),
+          "$workers": {
+            "eventType": "fetch",
+            "scriptName": "\#(scriptName)",
+            "outcome": "ok",
+            "cpuTimeMs": 0.4,
+            "wallTimeMs": 1.4,
+            "event": {
+              "request": { "method": "GET", "url": "https://api.example.com/health" },
+              "response": { "status": 200 }
+            }
+          }
+        }
+      ]
+      """#
+
+    let entries = errorsOnly ? [errorEntry] : [okEntry1, errorEntry, okEntry2]
+    return ok("{\"invocations\":{\(entries.joined(separator: ","))}}")
+  }
+
   // MARK: Pages
 
   /// Workers Builds live beside `workers`, not under it, and key on the

@@ -1324,3 +1324,54 @@ private actor ZoneSecurityLevelTestLatch {
   #expect(!WorkerRouteRules.isValidPattern("invalid pattern with spaces"))
   #expect(!WorkerRouteRules.isValidPattern("localhost"))
 }
+
+@Test func workerLogsFormattingBuildsTitlesDurationsAndCopyableOutput() {
+  let errRecord = WorkerInvocationRecord(
+    id: "req-1",
+    timestampMs: 1_760_000_000_000,
+    method: "POST",
+    url: "https://api.example.com/v1/checkout?retry=1",
+    trigger: "POST /v1/checkout",
+    statusCode: 500,
+    outcome: "exception",
+    durationMs: 18.4,
+    cpuTimeMs: 4.2,
+    rayID: "9a1b2c3d",
+    errorMessage: "TypeError: boom",
+    consoleLogs: [
+      WorkerConsoleLogLine(
+        id: "l1", timestampMs: 1_760_000_000_050, level: "warn", message: "retrying upstream"),
+      WorkerConsoleLogLine(
+        id: "l2", timestampMs: 1_760_000_000_120, level: "error", message: "TypeError: boom"),
+    ])
+  #expect(WorkerLogsFormatting.rowTitle(for: errRecord) == "POST /v1/checkout?retry=1")
+  #expect(WorkerLogsFormatting.durationLabel(errRecord.durationMs) == "18 ms")
+  #expect(WorkerLogsFormatting.durationLabel(errRecord.cpuTimeMs) == "4.2 ms")
+  #expect(WorkerLogsFormatting.durationLabel(1450) == "1.45 s")
+  #expect(WorkerLogsFormatting.statusSummary(for: errRecord) == "500 · exception")
+  let copied = WorkerLogsFormatting.copyableLog(for: errRecord)
+  #expect(copied.contains("POST /v1/checkout?retry=1"))
+  #expect(copied.contains("Ray ID: 9a1b2c3d"))
+  #expect(copied.contains("[WARN] retrying upstream"))
+  #expect(copied.contains("[ERROR] TypeError: boom"))
+
+  let okRecord = WorkerInvocationRecord(
+    id: "req-2",
+    timestampMs: 1_760_000_001_000,
+    trigger: "scheduled",
+    outcome: "ok")
+  #expect(WorkerLogsFormatting.rowTitle(for: okRecord) == "scheduled")
+  // An `ok` outcome is a status on its own, and noise beside a status code.
+  #expect(WorkerLogsFormatting.statusSummary(for: okRecord) == "ok")
+  #expect(
+    WorkerLogsFormatting.statusSummary(
+      for: WorkerInvocationRecord(id: "req-3", timestampMs: 0, statusCode: 204, outcome: "ok"))
+      == "204")
+  #expect(
+    WorkerLogsFormatting.detailFields(for: okRecord).map(\.label) == ["Trigger", "Status", "Time"])
+  #expect(
+    WorkerLogsFormatting.detailFields(for: errRecord).map(\.label) == [
+      "Error", "Method", "URL", "Status", "Time", "Duration", "CPU Time", "Ray ID",
+      "Console output",
+    ])
+}

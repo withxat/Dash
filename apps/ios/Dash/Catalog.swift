@@ -107,6 +107,8 @@ enum Destination: Hashable {
   case workerSource(String)
   /// Worker runtime settings, bindings, secrets, and Cron Triggers.
   case workerConfiguration(String)
+  /// Worker Observability invocation and console logs.
+  case workerLogs(String)
   /// One Cloudflare Tunnel, keyed on its immutable id.
   case tunnel(String)
   case pagesProject(String)

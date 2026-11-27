@@ -791,4 +791,185 @@ extension NetworkTests {
         "DELETE /zones/zone-1/workers/routes/route-1",
       ])
   }
+
+  @Test func queryWorkerObservabilityLogsSendsFiltersAndNormalizesInvocations() async throws {
+    let recorder = RequestRecorder()
+    let store = MemoryTokenStore(access: "token", refresh: nil)
+    let fixedNow = Date(timeIntervalSince1970: 1_760_000_000)
+    let session = mockSession { request in
+      let method = request.httpMethod ?? "?"
+      let path = request.url?.path ?? ""
+      recorder.record("\(method) \(path)")
+      guard method == "POST", path == "/accounts/acct-1/workers/observability/telemetry/query"
+      else {
+        return (404, Data(#"{"success":false,"errors":[{"code":404,"message":"not found"}]}"#.utf8))
+      }
+      let body = try #require(requestBodyData(request))
+      let payload = try #require(JSONSerialization.jsonObject(with: body) as? [String: Any])
+      #expect(payload["dry"] as? Bool == true)
+      #expect(payload["view"] as? String == "invocations")
+      let timeframe = try #require(payload["timeframe"] as? [String: Any])
+      let fromMs = try #require(timeframe["from"] as? Int64)
+      let toMs = try #require(timeframe["to"] as? Int64)
+      #expect(toMs - fromMs == 15 * 60 * 1000)
+      let parameters = try #require(payload["parameters"] as? [String: Any])
+      let filters = try #require(parameters["filters"] as? [[String: Any]])
+      #expect(filters.count == 2)
+      #expect(filters[0]["key"] as? String == "$metadata.service")
+      #expect(filters[0]["value"] as? String == "api-worker")
+      #expect(filters[1]["kind"] as? String == "group")
+      #expect(filters[1]["filterCombination"] as? String == "or")
+
+      return (
+        200,
+        Data(
+          #"""
+          {
+            "success": true,
+            "result": {
+              "invocations": {
+                "req-err": [
+                  {
+                    "$metadata": {
+                      "id": "ev-2",
+                      "requestId": "req-err",
+                      "level": "error",
+                      "message": "TypeError: Cannot read properties of undefined",
+                      "error": "TypeError: Cannot read properties of undefined"
+                    },
+                    "timestamp": 1759999900200,
+                    "source": {"stack": "at checkout (index.js:42)"}
+                  },
+                  {
+                    "$metadata": {
+                      "id": "ev-1",
+                      "requestId": "req-err",
+                      "type": "cf-worker-event",
+                      "trigger": "POST /v1/checkout",
+                      "url": "https://api.example.com/v1/checkout",
+                      "statusCode": 500,
+                      "duration": 18.4,
+                      "rayId": "9a1b2c3d"
+                    },
+                    "timestamp": 1759999900000,
+                    "$workers": {
+                      "eventType": "fetch",
+                      "scriptName": "api-worker",
+                      "outcome": "exception",
+                      "cpuTimeMs": 4.2,
+                      "wallTimeMs": 18.4,
+                      "event": {
+                        "request": { "method": "POST", "url": "https://api.example.com/v1/checkout" },
+                        "response": { "status": 500 }
+                      }
+                    }
+                  },
+                  {
+                    "$metadata": {
+                      "id": "ev-1b",
+                      "requestId": "req-err",
+                      "level": "info",
+                      "message": "Starting checkout"
+                    },
+                    "timestamp": 1759999900050,
+                    "source": "Starting checkout"
+                  }
+                ],
+                "req-ok": [
+                  {
+                    "$metadata": {
+                      "id": "ev-ok",
+                      "requestId": "req-ok",
+                      "type": "cf-worker-event",
+                      "trigger": "GET /health",
+                      "url": "https://api.example.com/health",
+                      "statusCode": 200,
+                      "duration": 1.5
+                    },
+                    "timestamp": 1759999800000,
+                    "$workers": {
+                      "eventType": "fetch",
+                      "scriptName": "api-worker",
+                      "outcome": "ok",
+                      "cpuTimeMs": 0.4
+                    }
+                  }
+                ]
+              }
+            }
+          }
+          """#.utf8)
+      )
+    }
+    let client = CloudflareClient(
+      clientID: "client", tokenStore: store, apiBase: URL(string: "https://api.example.test")!,
+      session: session)
+
+    let records = try await client.queryWorkerObservabilityLogs(
+      accountID: "acct-1",
+      scriptName: "api-worker",
+      windowMinutes: 15,
+      errorsOnly: true,
+      limit: 25,
+      now: fixedNow)
+
+    #expect(recorder.paths == ["POST /accounts/acct-1/workers/observability/telemetry/query"])
+    #expect(records.count == 2)
+    // Newest first.
+    #expect(records[0].id == "req-err")
+    #expect(records[0].method == "POST")
+    #expect(records[0].statusCode == 500)
+    #expect(records[0].outcome == "exception")
+    #expect(records[0].rayID == "9a1b2c3d")
+    #expect(records[0].isError == true)
+    // Console logs sorted chronologically.
+    #expect(
+      records[0].consoleLogs.map(\.message) == [
+        "Starting checkout",
+        "TypeError: Cannot read properties of undefined",
+      ])
+    #expect(records[1].id == "req-ok")
+    #expect(records[1].method == "GET")
+    #expect(records[1].isError == false)
+    #expect(records[1].consoleLogs.isEmpty)
+  }
+
+  @Test func workerObservabilityResponseFallsBackToFlatEventsGrouping() throws {
+    let json = #"""
+      {
+        "events": {
+          "count": 2,
+          "events": [
+            {
+              "$metadata": {
+                "id": "e1",
+                "requestId": "r-flat",
+                "type": "cf-worker-event",
+                "trigger": "GET /items",
+                "statusCode": 200
+              },
+              "timestamp": 1000,
+              "$workers": { "outcome": "ok" }
+            },
+            {
+              "$metadata": {
+                "id": "e2",
+                "requestId": "r-flat",
+                "level": "log",
+                "message": "loaded 3 items"
+              },
+              "timestamp": 1010
+            }
+          ]
+        }
+      }
+      """#
+    let decoded = try JSONDecoder().decode(
+      WorkerObservabilityQueryResponse.self, from: Data(json.utf8))
+    let records = decoded.invocationsList()
+    #expect(records.count == 1)
+    #expect(records[0].id == "r-flat")
+    #expect(records[0].method == "GET")
+    #expect(records[0].consoleLogs.map(\.message) == ["loaded 3 items"])
+  }
 }

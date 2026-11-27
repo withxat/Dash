@@ -79,7 +79,7 @@ import UIKit
   let model = AppModel(configuration: AppConfiguration(clientID: "", redirectURI: ""))
   #expect(model.selectedScopes == DashAuthorizationScopes.core)
   #expect(DashAuthorizationScopes.initialReadOnly.count == 21)
-  #expect(DashAuthorizationScopes.core.count == 37)
+  #expect(DashAuthorizationScopes.core.count == 38)
   #expect(DashAuthorizationScopes.initialReadOnly.isStrictSubset(of: DashAuthorizationScopes.core))
   #expect(
     DashAuthorizationScopes.initialReadOnly.allSatisfy {
@@ -193,6 +193,7 @@ import UIKit
     "firewall-services.read", "firewall-services.write",  // WAF IP Access Rules
     "ssl-and-certificates.read",  // Zone Settings Edge Certificates
     "workers-routes.write",  // Worker Detail Zone Routes create/edit/delete
+    "workers-observability.write",  // Worker Logs (the telemetry query accepts Write only)
   ]
   let readOnlyOperational = operational.filter {
     !$0.hasSuffix(".write") && !CachePurgeAccess.write.contains($0)
@@ -462,4 +463,15 @@ import UIKit
   #expect(readScopes(for: .zoneWAF("z-1")).isDisjoint(with: ZoneIPAccessRulesAccess.all))
   #expect(readScopes(for: .zoneSettings("z-1")).isDisjoint(with: ZoneSSLCertificatesAccess.read))
   #expect(writeScopes(for: .worker("api")).isDisjoint(with: WorkerRoutesAccess.write))
+}
+
+@Test func workerLogsScopesStayRequestableAndNonLocking() {
+  #expect(WorkerLogsAccess.query == ["workers-observability.write"])
+  #expect(WorkerLogsAccess.query.isSubset(of: DashAuthorizationScopes.core))
+  #expect(!DashAuthorizationScopes.core.contains("workers-observability.read"))
+  #expect(WorkerLogsAccess.query.isSubset(of: CloudflareScopes.requestable))
+  #expect(CloudflareScopes.invalid(in: Array(WorkerLogsAccess.query)).isEmpty)
+  #expect(CloudflareScopes.unsupported(in: Array(WorkerLogsAccess.query)).isEmpty)
+  #expect(readScopes(for: .worker("api")).isDisjoint(with: WorkerLogsAccess.query))
+  #expect(readScopes(for: .workerLogs("api")).isDisjoint(with: WorkerLogsAccess.query))
 }

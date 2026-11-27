@@ -118,7 +118,7 @@ func featureID(for destination: Destination) -> FeatureID? {
   // capability — `zone.write` it must never imply, and not the
   // `registrar-domains.*` it actually needs.
   case .registrarDomain: nil
-  case .worker, .workerBuild, .workerSource, .workerConfiguration: .workers
+  case .worker, .workerBuild, .workerSource, .workerConfiguration, .workerLogs: .workers
   case .tunnel: .tunnels
   case .pagesProject, .pagesDeployment, .pagesDomains, .pagesConfiguration: .pages
   case .r2Bucket, .r2BucketSettings: .r2
@@ -173,7 +173,7 @@ func readScopes(for destination: Destination) -> Set<String> {
   // Workers Builds answers under Workers CI, on top of the feature's own read.
   case .workerBuild:
     (featureID(for: destination)?.capability.read ?? []).union(WorkerBuildsAccess.read)
-  case .feature, .zone, .worker, .workerSource, .workerConfiguration, .pagesProject,
+  case .feature, .zone, .worker, .workerSource, .workerConfiguration, .workerLogs, .pagesProject,
     .pagesDeployment, .pagesDomains, .pagesConfiguration,
     .r2Bucket, .r2BucketSettings, .kvNamespace, .kvKey:
     featureID(for: destination)?.capability.read ?? []
@@ -205,7 +205,7 @@ func writeScopes(for destination: Destination) -> Set<String> {
   // `workers-scripts.write` neither grants it nor is needed for it.
   case .workerBuild:
     WorkerBuildsAccess.write
-  case .tunnel, .workerSource:
+  case .tunnel, .workerSource, .workerLogs:
     []
   case .zoneWAF:
     ["zone-settings.write"]

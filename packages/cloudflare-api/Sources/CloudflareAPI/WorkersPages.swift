@@ -1896,4 +1896,527 @@ extension CloudflareClient {
       previousCPUTimeP50Us: previousCPUTimeP50Us
     )
   }
+
+  /// Queries Workers Observability invocation logs and console output for one
+  /// script (`POST /accounts/{account_id}/workers/observability/telemetry/query`).
+  public func queryWorkerObservabilityLogs(
+    accountID: String,
+    scriptName: String,
+    windowMinutes: Int = 60,
+    errorsOnly: Bool = false,
+    limit: Int = 50,
+    now: Date = .now
+  ) async throws -> [WorkerInvocationRecord] {
+    let clampedMinutes = max(1, windowMinutes)
+    let clampedLimit = min(max(1, limit), 200)
+    let toMs = Int64((now.timeIntervalSince1970 * 1000).rounded())
+    let fromMs = toMs - Int64(clampedMinutes) * 60 * 1000
+    var filters: [WorkerObservabilityFilterNode] = [
+      .leaf(
+        key: "$metadata.service",
+        operation: "eq",
+        type: "string",
+        value: .string(scriptName))
+    ]
+    if errorsOnly {
+      filters.append(
+        .group(
+          filterCombination: "or",
+          filters: [
+            .leaf(key: "$metadata.error", operation: "exists", type: "string", value: nil),
+            .leaf(
+              key: "$metadata.statusCode",
+              operation: "gte",
+              type: "number",
+              value: .number(400)),
+            .leaf(
+              key: "$metadata.level",
+              operation: "eq",
+              type: "string",
+              value: .string("error")),
+          ]))
+    }
+    let payload = WorkerObservabilityQueryRequest(
+      queryId: "dash-worker-logs",
+      dry: true,
+      view: "invocations",
+      limit: clampedLimit,
+      timeframe: WorkerObservabilityTimeframe(from: fromMs, to: toMs),
+      parameters: WorkerObservabilityQueryParameters(
+        datasets: ["cloudflare-workers"],
+        filterCombination: "and",
+        filters: filters))
+    let response: WorkerObservabilityQueryResponse = try await request(
+      "/accounts/\(accountID)/workers/observability/telemetry/query",
+      method: "POST",
+      body: payload)
+    return response.invocationsList()
+  }
+}
+
+// MARK: - Workers Observability Telemetry
+
+public struct WorkerObservabilityTimeframe: Codable, Hashable, Sendable {
+  public let from: Int64
+  public let to: Int64
+
+  public init(from: Int64, to: Int64) {
+    self.from = from
+    self.to = to
+  }
+}
+
+public enum WorkerObservabilityFilterValue: Codable, Hashable, Sendable {
+  case string(String)
+  case number(Double)
+  case bool(Bool)
+
+  public init(from decoder: Decoder) throws {
+    let container = try decoder.singleValueContainer()
+    if let b = try? container.decode(Bool.self) {
+      self = .bool(b)
+    } else if let n = try? container.decode(Double.self) {
+      self = .number(n)
+    } else {
+      self = .string(try container.decode(String.self))
+    }
+  }
+
+  public func encode(to encoder: Encoder) throws {
+    var container = encoder.singleValueContainer()
+    switch self {
+    case .string(let s): try container.encode(s)
+    case .number(let n): try container.encode(n)
+    case .bool(let b): try container.encode(b)
+    }
+  }
+}
+
+public indirect enum WorkerObservabilityFilterNode: Codable, Hashable, Sendable {
+  case leaf(
+    key: String,
+    operation: String,
+    type: String,
+    value: WorkerObservabilityFilterValue?)
+  case group(filterCombination: String, filters: [WorkerObservabilityFilterNode])
+
+  private enum CodingKeys: String, CodingKey {
+    case kind
+    case key
+    case operation
+    case type
+    case value
+    case filterCombination
+    case filters
+  }
+
+  public init(from decoder: Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    if try container.decodeIfPresent(String.self, forKey: .kind) == "group" {
+      let combo = try container.decode(String.self, forKey: .filterCombination)
+      let nested = try container.decode([WorkerObservabilityFilterNode].self, forKey: .filters)
+      self = .group(filterCombination: combo, filters: nested)
+    } else {
+      let key = try container.decode(String.self, forKey: .key)
+      let op = try container.decode(String.self, forKey: .operation)
+      let type = try container.decode(String.self, forKey: .type)
+      let value = try container.decodeIfPresent(WorkerObservabilityFilterValue.self, forKey: .value)
+      self = .leaf(key: key, operation: op, type: type, value: value)
+    }
+  }
+
+  public func encode(to encoder: Encoder) throws {
+    var container = encoder.container(keyedBy: CodingKeys.self)
+    switch self {
+    case .leaf(let key, let operation, let type, let value):
+      try container.encode("filter", forKey: .kind)
+      try container.encode(key, forKey: .key)
+      try container.encode(operation, forKey: .operation)
+      try container.encode(type, forKey: .type)
+      try container.encodeIfPresent(value, forKey: .value)
+    case .group(let combo, let filters):
+      try container.encode("group", forKey: .kind)
+      try container.encode(combo, forKey: .filterCombination)
+      try container.encode(filters, forKey: .filters)
+    }
+  }
+}
+
+public struct WorkerObservabilityQueryParameters: Codable, Hashable, Sendable {
+  public let datasets: [String]
+  public let filterCombination: String
+  public let filters: [WorkerObservabilityFilterNode]
+
+  public init(
+    datasets: [String],
+    filterCombination: String = "and",
+    filters: [WorkerObservabilityFilterNode]
+  ) {
+    self.datasets = datasets
+    self.filterCombination = filterCombination
+    self.filters = filters
+  }
+}
+
+public struct WorkerObservabilityQueryRequest: Codable, Hashable, Sendable {
+  public let queryId: String
+  public let dry: Bool
+  public let view: String
+  public let limit: Int
+  public let timeframe: WorkerObservabilityTimeframe
+  public let parameters: WorkerObservabilityQueryParameters
+
+  public init(
+    queryId: String,
+    dry: Bool,
+    view: String,
+    limit: Int,
+    timeframe: WorkerObservabilityTimeframe,
+    parameters: WorkerObservabilityQueryParameters
+  ) {
+    self.queryId = queryId
+    self.dry = dry
+    self.view = view
+    self.limit = limit
+    self.timeframe = timeframe
+    self.parameters = parameters
+  }
+}
+
+public struct WorkerObservabilityEventMetadata: Codable, Hashable, Sendable {
+  public let id: String
+  public let requestId: String?
+  public let service: String?
+  public let level: String?
+  public let message: String?
+  public let error: String?
+  public let statusCode: Int?
+  public let duration: Double?
+  public let trigger: String?
+  public let url: String?
+  public let type: String?
+  public let rayId: String?
+  public let region: String?
+  public let coldStart: Int?
+
+  public init(
+    id: String,
+    requestId: String? = nil,
+    service: String? = nil,
+    level: String? = nil,
+    message: String? = nil,
+    error: String? = nil,
+    statusCode: Int? = nil,
+    duration: Double? = nil,
+    trigger: String? = nil,
+    url: String? = nil,
+    type: String? = nil,
+    rayId: String? = nil,
+    region: String? = nil,
+    coldStart: Int? = nil
+  ) {
+    self.id = id
+    self.requestId = requestId
+    self.service = service
+    self.level = level
+    self.message = message
+    self.error = error
+    self.statusCode = statusCode
+    self.duration = duration
+    self.trigger = trigger
+    self.url = url
+    self.type = type
+    self.rayId = rayId
+    self.region = region
+    self.coldStart = coldStart
+  }
+}
+
+public struct WorkerObservabilityWorkerEvent: Codable, Hashable, Sendable {
+  public struct RequestInfo: Codable, Hashable, Sendable {
+    public let method: String?
+    public let url: String?
+  }
+
+  public struct ResponseInfo: Codable, Hashable, Sendable {
+    public let status: Int?
+  }
+
+  public let request: RequestInfo?
+  public let response: ResponseInfo?
+}
+
+public struct WorkerObservabilityWorkersInfo: Codable, Hashable, Sendable {
+  public let eventType: String?
+  public let scriptName: String?
+  public let outcome: String?
+  public let cpuTimeMs: Double?
+  public let wallTimeMs: Double?
+  public let requestId: String?
+  public let event: WorkerObservabilityWorkerEvent?
+
+  public init(
+    eventType: String? = nil,
+    scriptName: String? = nil,
+    outcome: String? = nil,
+    cpuTimeMs: Double? = nil,
+    wallTimeMs: Double? = nil,
+    requestId: String? = nil,
+    event: WorkerObservabilityWorkerEvent? = nil
+  ) {
+    self.eventType = eventType
+    self.scriptName = scriptName
+    self.outcome = outcome
+    self.cpuTimeMs = cpuTimeMs
+    self.wallTimeMs = wallTimeMs
+    self.requestId = requestId
+    self.event = event
+  }
+}
+
+public struct WorkerObservabilityTelemetryEvent: Codable, Hashable, Sendable {
+  public let metadata: WorkerObservabilityEventMetadata
+  public let dataset: String?
+  public let timestamp: Int64
+  public let source: String?
+  public let workers: WorkerObservabilityWorkersInfo?
+
+  private enum CodingKeys: String, CodingKey {
+    case metadata = "$metadata"
+    case dataset
+    case timestamp
+    case source
+    case workers = "$workers"
+  }
+
+  public init(
+    metadata: WorkerObservabilityEventMetadata,
+    dataset: String? = nil,
+    timestamp: Int64,
+    source: String? = nil,
+    workers: WorkerObservabilityWorkersInfo? = nil
+  ) {
+    self.metadata = metadata
+    self.dataset = dataset
+    self.timestamp = timestamp
+    self.source = source
+    self.workers = workers
+  }
+
+  public init(from decoder: Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    metadata = try container.decode(WorkerObservabilityEventMetadata.self, forKey: .metadata)
+    dataset = try container.decodeIfPresent(String.self, forKey: .dataset)
+    timestamp = try container.decodeIfPresent(Int64.self, forKey: .timestamp) ?? 0
+    if let stringSource = try? container.decodeIfPresent(String.self, forKey: .source) {
+      source = stringSource
+    } else if let jsonValue = try? container.decodeIfPresent(JSONValue.self, forKey: .source) {
+      let encoder = JSONEncoder()
+      encoder.outputFormatting = [.sortedKeys]
+      if let data = try? encoder.encode(jsonValue), let text = String(data: data, encoding: .utf8) {
+        source = text
+      } else {
+        source = nil
+      }
+    } else {
+      source = nil
+    }
+    workers = try? container.decodeIfPresent(WorkerObservabilityWorkersInfo.self, forKey: .workers)
+  }
+}
+
+public struct WorkerObservabilityEventsContainer: Codable, Hashable, Sendable {
+  public let count: Int?
+  public let events: [WorkerObservabilityTelemetryEvent]?
+}
+
+public struct WorkerObservabilityQueryResponse: Codable, Hashable, Sendable {
+  public let invocations: [String: [WorkerObservabilityTelemetryEvent]]?
+  public let events: WorkerObservabilityEventsContainer?
+
+  public init(
+    invocations: [String: [WorkerObservabilityTelemetryEvent]]? = nil,
+    events: WorkerObservabilityEventsContainer? = nil
+  ) {
+    self.invocations = invocations
+    self.events = events
+  }
+
+  /// Normalizes either the `invocations` map or the flat `events.events` array
+  /// into chronologically sorted invocation records (newest first).
+  public func invocationsList() -> [WorkerInvocationRecord] {
+    let grouped: [String: [WorkerObservabilityTelemetryEvent]]
+    if let invocations, !invocations.isEmpty {
+      grouped = invocations
+    } else if let rawEvents = events?.events, !rawEvents.isEmpty {
+      var byRequest: [String: [WorkerObservabilityTelemetryEvent]] = [:]
+      for event in rawEvents {
+        let key = event.metadata.requestId ?? event.workers?.requestId ?? event.metadata.id
+        byRequest[key, default: []].append(event)
+      }
+      grouped = byRequest
+    } else {
+      return []
+    }
+
+    return grouped.compactMap { key, items -> WorkerInvocationRecord? in
+      let ordered = items.sorted { lhs, rhs in
+        if lhs.timestamp != rhs.timestamp { return lhs.timestamp < rhs.timestamp }
+        return lhs.metadata.id < rhs.metadata.id
+      }
+      guard !ordered.isEmpty else { return nil }
+      let root =
+        ordered.first {
+          $0.metadata.type == "cf-worker-event"
+            || $0.workers?.outcome != nil
+            || $0.metadata.statusCode != nil
+            || $0.workers?.event?.request?.url != nil
+        } ?? ordered[0]
+
+      let trigger =
+        ordered.compactMap { $0.metadata.trigger?.trimmingCharacters(in: .whitespacesAndNewlines) }
+        .first { !$0.isEmpty }
+      let rawURL =
+        ordered.compactMap {
+          $0.metadata.url ?? $0.workers?.event?.request?.url
+        }.first { !$0.isEmpty }
+      let explicitMethod =
+        ordered.compactMap { $0.workers?.event?.request?.method }.first { !$0.isEmpty }
+      let inferredMethod = explicitMethod ?? Self.inferHTTPMethod(fromTrigger: trigger)
+      let statusCode =
+        ordered.compactMap { $0.metadata.statusCode ?? $0.workers?.event?.response?.status }.first
+      let outcome = ordered.compactMap { $0.workers?.outcome }.first { !$0.isEmpty }
+      let durationMs =
+        ordered.compactMap { $0.metadata.duration ?? $0.workers?.wallTimeMs }.first
+      let cpuTimeMs = ordered.compactMap { $0.workers?.cpuTimeMs }.first
+      let rayID = ordered.compactMap { $0.metadata.rayId }.first { !$0.isEmpty }
+      let errorMessage =
+        ordered.compactMap { $0.metadata.error?.trimmingCharacters(in: .whitespacesAndNewlines) }
+        .first { !$0.isEmpty }
+
+      var consoleLogs: [WorkerConsoleLogLine] = []
+      for item in ordered {
+        let level = item.metadata.level?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let message = item.metadata.message?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let itemError = item.metadata.error?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let sourceText = item.source?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let isPureSummary =
+          item.metadata.id == root.metadata.id
+          && (level == nil || level?.isEmpty == true)
+          && itemError == nil
+          && (sourceText == nil || sourceText?.isEmpty == true)
+        if isPureSummary { continue }
+        let resolvedMessage =
+          [message, itemError, sourceText]
+          .compactMap { $0 }
+          .first { !$0.isEmpty }
+        if let resolvedMessage {
+          consoleLogs.append(
+            WorkerConsoleLogLine(
+              id: item.metadata.id,
+              timestampMs: item.timestamp,
+              level: (level?.isEmpty == false ? level : (itemError != nil ? "error" : "log"))
+                ?? "log",
+              message: resolvedMessage))
+        }
+      }
+
+      let timestampMs = root.timestamp != 0 ? root.timestamp : (ordered.first?.timestamp ?? 0)
+      return WorkerInvocationRecord(
+        id: key,
+        timestampMs: timestampMs,
+        method: inferredMethod,
+        url: rawURL,
+        trigger: trigger ?? root.workers?.eventType,
+        statusCode: statusCode,
+        outcome: outcome,
+        durationMs: durationMs,
+        cpuTimeMs: cpuTimeMs,
+        rayID: rayID,
+        errorMessage: errorMessage,
+        consoleLogs: consoleLogs)
+    }
+    .sorted { lhs, rhs in
+      if lhs.timestampMs != rhs.timestampMs { return lhs.timestampMs > rhs.timestampMs }
+      return lhs.id < rhs.id
+    }
+  }
+
+  private static func inferHTTPMethod(fromTrigger trigger: String?) -> String? {
+    guard let trigger else { return nil }
+    let firstToken = trigger.split(separator: " ", maxSplits: 1).first.map(String.init)
+    guard let firstToken else { return nil }
+    let known: Set<String> = ["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"]
+    return known.contains(firstToken.uppercased()) ? firstToken.uppercased() : nil
+  }
+}
+
+public struct WorkerConsoleLogLine: Codable, Hashable, Identifiable, Sendable {
+  public let id: String
+  public let timestampMs: Int64
+  public let level: String
+  public let message: String
+
+  public init(id: String, timestampMs: Int64, level: String, message: String) {
+    self.id = id
+    self.timestampMs = timestampMs
+    self.level = level
+    self.message = message
+  }
+}
+
+public struct WorkerInvocationRecord: Codable, Hashable, Identifiable, Sendable {
+  public let id: String
+  public let timestampMs: Int64
+  public let method: String?
+  public let url: String?
+  public let trigger: String?
+  public let statusCode: Int?
+  public let outcome: String?
+  public let durationMs: Double?
+  public let cpuTimeMs: Double?
+  public let rayID: String?
+  public let errorMessage: String?
+  public let consoleLogs: [WorkerConsoleLogLine]
+
+  public init(
+    id: String,
+    timestampMs: Int64,
+    method: String? = nil,
+    url: String? = nil,
+    trigger: String? = nil,
+    statusCode: Int? = nil,
+    outcome: String? = nil,
+    durationMs: Double? = nil,
+    cpuTimeMs: Double? = nil,
+    rayID: String? = nil,
+    errorMessage: String? = nil,
+    consoleLogs: [WorkerConsoleLogLine] = []
+  ) {
+    self.id = id
+    self.timestampMs = timestampMs
+    self.method = method
+    self.url = url
+    self.trigger = trigger
+    self.statusCode = statusCode
+    self.outcome = outcome
+    self.durationMs = durationMs
+    self.cpuTimeMs = cpuTimeMs
+    self.rayID = rayID
+    self.errorMessage = errorMessage
+    self.consoleLogs = consoleLogs
+  }
+
+  public var isError: Bool {
+    if let outcome = outcome?.lowercased(), !outcome.isEmpty, outcome != "ok" {
+      return true
+    }
+    if let statusCode, statusCode >= 400 {
+      return true
+    }
+    if let errorMessage, !errorMessage.isEmpty {
+      return true
+    }
+    return consoleLogs.contains { $0.level.lowercased() == "error" }
+  }
 }

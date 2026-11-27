@@ -712,6 +712,11 @@ final class DemoSession: NSObject, URLSessionDelegate, @unchecked Sendable {
     input: [String: Any], query: [String: String]
   ) -> DemoBackend.Reply {
     let method = request.httpMethod ?? "GET"
+    if tail.count >= 4, tail[1] == "observability", tail[2] == "telemetry", tail[3] == "query",
+      method == "POST"
+    {
+      return DemoBackend.workerObservabilityLogsReply(input: input)
+    }
     if tail.count >= 2, tail[1] == "domains" {
       return records(
         base + "/workers/domains", tail: Array(tail.dropFirst(2)), method: method, input: input,

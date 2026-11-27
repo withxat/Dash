@@ -752,6 +752,14 @@ struct WorkerDetailView: View {
     .dashBodySlot(reduceMotion: reduceMotion)
 
     DashTwoToneListGroup(title: "Script") {
+      DashListGroupLink(value: .workerLogs(name)) {
+        DashListRow(
+          title: DashL10n.string("Logs"),
+          icon: SolarAsset.file,
+          showsIconPlate: false
+        )
+        .accessibilityLabel(DashL10n.string("Script, Logs"))
+      }
       DashListGroupLink(value: .workerConfiguration(name)) {
         DashListRow(
           title: DashL10n.string("Bindings & triggers"),

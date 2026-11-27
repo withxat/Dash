@@ -44,6 +44,7 @@ struct DestinationRoutedContent: View {
         WorkerBuildDetailView(workerName: worker, buildID: buildID)
       case .workerSource(let name): WorkerSourceView(name: name)
       case .workerConfiguration(let name): WorkerConfigurationView(name: name)
+      case .workerLogs(let name): WorkerLogsView(name: name)
       case .tunnel(let id): TunnelDetailView(tunnelID: id)
       case .pagesProject(let name): PagesProjectDetailView(projectName: name)
       case .pagesDeployment(let project, let deploymentID):
