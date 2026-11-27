@@ -592,7 +592,7 @@ struct DashToastHost: View {
           // proxy does not see — this is the card's seated rect, which is what
           // the hit region should be. Outset covers the entrance travel.
           .onGeometryChange(for: CGRect.self, of: { $0.frame(in: .global) }) { frame in
-            layerState?.publishInteractiveFrame(frame.insetBy(dx: -8, dy: -32))
+            layerState?.publishCardFrame(frame)
           }
           .modifier(
             DashToastReveal(progress: reveal, travel: travel, reduceMotion: reduceMotion)
@@ -639,7 +639,7 @@ struct DashToastHost: View {
   private func apply(_ next: DashToast?) {
     guard let next else {
       guard displayed != nil else { return }
-      layerState?.publishInteractiveFrame(.null)
+      layerState?.publishCardFrame(.null)
       // Only when it is actually set: `@Observable` notifies on every write,
       // equal or not, and this one invalidates the tray that reads the mark —
       // needless work in the exact frame the exit starts.

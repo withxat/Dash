@@ -811,6 +811,9 @@ private struct DashCustomSheet<Hero: View, Content: View, Footer: View>: View {
   /// Frozen before the cover mounts so layout never synchronously asks UIKit
   /// to resolve status-bar / safe-area preferences from inside this body.
   let safeBottom: CGFloat
+  /// Bottom of a toast that was on screen when this tray presented; the card
+  /// stops below it. Nil is the ordinary top gap.
+  var toastCeiling: CGFloat? = nil
   /// Paired action plus its frozen presenting frame. Nil keeps the standard
   /// bottom reveal; the destination must still report the matching identity.
   var sharedAction: DashTraySharedAction? = nil
@@ -984,7 +987,9 @@ private struct DashCustomSheet<Hero: View, Content: View, Footer: View>: View {
           DashSheetCard(
             maxCardHeight: Self.resolvedMaxCardHeight(
               containerHeight: proxy.size.height,
-              bottomLift: bottomLift),
+              containerTop: proxy.frame(in: .global).minY,
+              bottomLift: bottomLift,
+              toastCeiling: toastCeiling),
             hasFooter: hasFooter,
             drawsSurface: !sharedRevealActive,
             sharedRevealProgress: sharedRevealActive ? progress : nil
@@ -1401,10 +1406,14 @@ private struct DashCustomSheet<Hero: View, Content: View, Footer: View>: View {
   /// "Invalid frame dimension").
   private static func resolvedMaxCardHeight(
     containerHeight: CGFloat,
-    bottomLift: CGFloat
+    containerTop: CGFloat,
+    bottomLift: CGFloat,
+    toastCeiling: CGFloat?
   ) -> CGFloat {
     guard containerHeight.isFinite, bottomLift.isFinite else { return 120 }
-    return max(120, containerHeight - bottomLift - 24)
+    let topGap = DashTrayToastClearanceRules.topGap(
+      containerTop: containerTop, toastCeiling: toastCeiling)
+    return max(120, containerHeight - bottomLift - topGap)
   }
 
   /// Only ✕ retraces a settled paired action. Drag, scrim, and programmatic
@@ -2465,6 +2474,8 @@ private struct DashTrayCoverPresentation<Value>: Identifiable {
   let id = UUID()
   let value: Value
   let safeBottom: CGFloat
+  /// Where a toast already on screen ends, frozen with `safeBottom`.
+  let toastCeiling: CGFloat?
   let sharedAction: DashTraySharedAction?
   let sourceFrame: CGRect?
 }
@@ -2480,6 +2491,7 @@ private struct DashTrayModifier<Hero: View, TrayContent: View, Footer: View>: Vi
   @ViewBuilder var footer: () -> Footer
   let hasFooter: Bool
   @Environment(\.accessibilityReduceMotion) private var accessibilityReduceMotion
+  @Environment(\.dashToastLayerState) private var toastLayerState
   #if DEBUG
     @Environment(\.dashTrayReduceMotionOverride) private var reduceMotionOverride
   #endif
@@ -2515,6 +2527,8 @@ private struct DashTrayModifier<Hero: View, TrayContent: View, Footer: View>: Vi
           sharedActionLease.adopt(claim)
           let presentation = DashTrayCoverPresentation(
             value: true, safeBottom: dashTrayBottomSafeInset(),
+            toastCeiling: DashTrayToastClearanceRules.ceiling(
+              toastCardFrame: toastLayerState?.cardFrame),
             sharedAction: claim?.action, sourceFrame: claim?.frame)
           dashPresentWithoutAnimation { coverPresentation = presentation }
         } else {
@@ -2548,6 +2562,7 @@ private struct DashTrayModifier<Hero: View, TrayContent: View, Footer: View>: Vi
             DashCustomSheet(
               title: title, showsMenuButtons: showsMenuButtons, tone: tone,
               safeBottom: presentation.safeBottom,
+              toastCeiling: presentation.toastCeiling,
               sharedAction: presentation.sharedAction, sourceFrame: presentation.sourceFrame,
               hero: hero,
               onDismiss: { completion in
@@ -2575,6 +2590,7 @@ private struct DashTrayItemModifier<Item: Identifiable & Equatable, Hero: View, 
   var hero: ((Item) -> Hero)?
   @ViewBuilder var trayContent: (Item) -> TrayContent
   @Environment(\.accessibilityReduceMotion) private var accessibilityReduceMotion
+  @Environment(\.dashToastLayerState) private var toastLayerState
   #if DEBUG
     @Environment(\.dashTrayReduceMotionOverride) private var reduceMotionOverride
   #endif
@@ -2611,6 +2627,8 @@ private struct DashTrayItemModifier<Item: Identifiable & Equatable, Hero: View, 
           sharedActionLease.adopt(claim)
           let presentation = DashTrayCoverPresentation(
             value: newItem, safeBottom: dashTrayBottomSafeInset(),
+            toastCeiling: DashTrayToastClearanceRules.ceiling(
+              toastCardFrame: toastLayerState?.cardFrame),
             sharedAction: claim?.action, sourceFrame: claim?.frame)
           dashPresentWithoutAnimation { coverPresentation = presentation }
         } else {
@@ -2642,6 +2660,7 @@ private struct DashTrayItemModifier<Item: Identifiable & Equatable, Hero: View, 
             DashCustomSheet<Hero, TrayContent, EmptyView>(
               title: title(presentation.value), showsMenuButtons: showsMenuButtons, tone: tone,
               safeBottom: presentation.safeBottom,
+              toastCeiling: presentation.toastCeiling,
               sharedAction: presentation.sharedAction, sourceFrame: presentation.sourceFrame,
               hero: hero.map { hero in { hero(presentation.value) } },
               onDismiss: { completion in

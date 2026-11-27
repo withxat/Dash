@@ -25,6 +25,39 @@ enum DashTrayBottomLiftRules {
   }
 }
 
+/// Top-gap arithmetic for a tray that opens while a toast is on screen.
+///
+/// The toast lives in its own window above every cover, so a tray tall enough
+/// to reach it loses its header to it: the ✕ and the header action sit under
+/// the toast and their taps land on the toast instead. Deleting one DNS record
+/// and opening the next within the Undo window did exactly that.
+///
+/// The ceiling is frozen as the tray presents, like `safeBottom`. A toast that
+/// arrives over an open tray does not resize it — a card that shrank under the
+/// user's finger is worse than a header covered for a moment.
+enum DashTrayToastClearanceRules {
+  /// The gap every tray keeps under the top of its container.
+  static let restingTopGap: CGFloat = 24
+  /// Air between the toast's bottom edge and the card's top edge.
+  static let toastGap: CGFloat = 8
+
+  /// The window Y the card's top edge must stay below, or nil with no toast.
+  static func ceiling(toastCardFrame: CGRect?) -> CGFloat? {
+    guard let frame = toastCardFrame, !frame.isNull, !frame.isEmpty, frame.maxY.isFinite
+    else { return nil }
+    return frame.maxY + toastGap
+  }
+
+  /// The gap between the container's top and the tallest card it may hold.
+  /// Never under the resting gap: a toast only ever takes room away.
+  static func topGap(containerTop: CGFloat, toastCeiling: CGFloat?) -> CGFloat {
+    guard let toastCeiling, toastCeiling.isFinite, containerTop.isFinite else {
+      return restingTopGap
+    }
+    return max(restingTopGap, toastCeiling - containerTop)
+  }
+}
+
 /// Height arithmetic for the tray's scroll boundary, kept out of the view so
 /// the one rule that decides what scrolls is testable.
 enum DashTrayScrollBoundaryRules {

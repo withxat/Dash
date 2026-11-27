@@ -735,3 +735,25 @@ import UIKit
   #expect(DashToast.Kind.warning.duration < DashToast.Kind.error.duration)
   #expect(DashToast(kind: .success, message: "ok", duration: 1).duration == 1)
 }
+
+@Test func trayOpeningUnderAToastStopsBelowIt() {
+  // No toast: the ordinary gap, whatever the container's origin.
+  #expect(DashTrayToastClearanceRules.ceiling(toastCardFrame: nil) == nil)
+  #expect(DashTrayToastClearanceRules.ceiling(toastCardFrame: .null) == nil)
+  #expect(DashTrayToastClearanceRules.ceiling(toastCardFrame: .zero) == nil)
+  #expect(DashTrayToastClearanceRules.topGap(containerTop: 62, toastCeiling: nil) == 24)
+
+  // A two-line toast seated under the status bar: the card stops 8pt below it.
+  let toast = CGRect(x: 12, y: 72, width: 378, height: 68)
+  let ceiling = DashTrayToastClearanceRules.ceiling(toastCardFrame: toast)
+  #expect(ceiling == 148)
+  // The gap is measured from the container's own top, which is not the screen's.
+  #expect(DashTrayToastClearanceRules.topGap(containerTop: 62, toastCeiling: ceiling) == 86)
+  #expect(DashTrayToastClearanceRules.topGap(containerTop: 0, toastCeiling: ceiling) == 148)
+
+  // A toast can only take room away: one that ends above the resting gap
+  // must not let the card rise past it.
+  #expect(DashTrayToastClearanceRules.topGap(containerTop: 62, toastCeiling: 70) == 24)
+  #expect(DashTrayToastClearanceRules.topGap(containerTop: .nan, toastCeiling: 148) == 24)
+  #expect(DashTrayToastClearanceRules.topGap(containerTop: 62, toastCeiling: .infinity) == 24)
+}

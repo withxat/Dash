@@ -70,8 +70,17 @@ final class DashToastLayerState {
     successFlightInProgress = false
   }
 
-  func publishInteractiveFrame(_ frame: CGRect) {
-    onInteractiveFrameChange?(frame)
+  /// The seated toast card's rect in window coordinates; `.null` with no toast
+  /// on screen. Unobserved like the hook above, and for the same reason. A
+  /// tray reads it exactly once, as it presents, to stop below a toast that is
+  /// already there (`DashTrayToastClearanceRules`).
+  @ObservationIgnored private(set) var cardFrame: CGRect = .null
+
+  /// Records the seated card and hands UIKit its touch region: the card's rect
+  /// with an outset that covers the entrance travel.
+  func publishCardFrame(_ frame: CGRect) {
+    cardFrame = frame
+    onInteractiveFrameChange?(frame.isNull ? .null : frame.insetBy(dx: -8, dy: -32))
   }
 }
 
